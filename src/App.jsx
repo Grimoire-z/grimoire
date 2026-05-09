@@ -17,22 +17,24 @@ export default function App() {
   const [mode,      setMode]      = useState('roll');
   const [character, setCharacter] = useState(initial.character || DEFAULT_CHARACTER);
   const [modifiers, setModifiers] = useState(initial.modifiers || DEFAULT_MODIFIERS);
+  const [targets,   setTargets]   = useState(initial.targets || []);
   const [channel,   setChannel]   = useState(initial.channel || '#party-roll');
 
   // Ephemeral roll-view state — not persisted.
-  const [tab,        setTab]        = useState('attacks');
-  const [activeMods, setActiveMods] = useState({});
-  const [modParams,  setModParams]  = useState({});
-  const [custom,     setCustom]     = useState({ bonus: '', damage: '' });
-  const [castLevel,  setCastLevel]  = useState({});
-  const [composed,   setComposed]   = useState('');
-  const [history,    setHistory]    = useState([]);
-  const [copied,     setCopied]     = useState(false);
+  const [tab,             setTab]             = useState('attacks');
+  const [activeMods,      setActiveMods]      = useState({});
+  const [modParams,       setModParams]       = useState({});
+  const [selectedTargets, setSelectedTargets] = useState({});
+  const [custom,          setCustom]          = useState({ bonus: '', damage: '' });
+  const [castLevel,       setCastLevel]       = useState({});
+  const [composed,        setComposed]        = useState('');
+  const [history,         setHistory]         = useState([]);
+  const [copied,          setCopied]          = useState(false);
 
   // Persist whenever the durable bits change.
   useEffect(() => {
-    saveState({ character, modifiers, channel });
-  }, [character, modifiers, channel]);
+    saveState({ character, modifiers, targets, channel });
+  }, [character, modifiers, targets, channel]);
 
   return (
     <div className="bg-grimoire grain font-body text-parchment min-h-screen relative overflow-hidden">
@@ -45,6 +47,8 @@ export default function App() {
         <RollView
           character={character}
           modifiers={modifiers}
+          targets={targets} setTargets={setTargets}
+          selectedTargets={selectedTargets} setSelectedTargets={setSelectedTargets}
           tab={tab} setTab={setTab}
           activeMods={activeMods} setActiveMods={setActiveMods}
           modParams={modParams} setModParams={setModParams}

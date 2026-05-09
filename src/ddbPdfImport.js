@@ -306,11 +306,17 @@ function mapFormFields(fields) {
 
 function mapWeapons(fields) {
   const attacks = [];
+  const seen = new Set();
   for (let i = 1; i <= 6; i++) {
     // First weapon's name field has no number; the rest are " 2", " 3", ...
     const nameField  = i === 1 ? 'Wpn Name' : `Wpn Name ${i}`;
     const name       = readField(fields, nameField);
     if (!name) continue;
+    const display = String(name).trim();
+    const id = display.toLowerCase();
+    if (seen.has(id)) continue;
+    seen.add(id);
+
     const bonus = readField(fields, `Wpn${i} AtkBonus`);
     const dmg   = readField(fields, `Wpn${i} Damage`);
     const notes = readField(fields, `Wpn Notes ${i}`);
@@ -318,9 +324,8 @@ function mapWeapons(fields) {
     if (dmg)   subParts.push(String(dmg).trim());
     if (bonus) subParts.push(`${String(bonus).trim()} to hit`);
     if (notes) subParts.push(String(notes).trim());
-    const display = String(name).trim();
     attacks.push({
-      id: display.toLowerCase(),
+      id,
       name: display,
       sub: subParts.join(' · '),
     });
@@ -489,7 +494,10 @@ async function mapSpells(pdf, fields) {
   }
 
   // Pass 2: gather each spell's full row data from the field map.
+  // DDB sometimes lists a spell twice (e.g. an "always prepared" entry plus
+  // its native list entry); we de-dup by id within each level.
   const spellsByLevel = { 0: [], 1: [], 2: [], 3: [], 4: [], 5: [], 6: [], 7: [], 8: [], 9: [] };
+  const seenByLevel   = { 0: new Set(), 1: new Set(), 2: new Set(), 3: new Set(), 4: new Set(), 5: new Set(), 6: new Set(), 7: new Set(), 8: new Set(), 9: new Set() };
   const indices = Object.keys(indexToLevel).map(Number).sort((a, b) => a - b);
   for (const i of indices) {
     const name  = readField(fields, `spellName${i}`);
@@ -497,15 +505,19 @@ async function mapSpells(pdf, fields) {
     const level = indexToLevel[i];
     if (level < 0 || level > 9) continue;
 
+    const display = String(name).trim();
+    const id = display.toLowerCase();
+    if (seenByLevel[level].has(id)) continue;
+    seenByLevel[level].add(id);
+
     const range = readField(fields, `spellRange${i}`);
     const time  = readField(fields, `spellCastingTime${i}`);
     const comps = readField(fields, `spellComponents${i}`);
     const dur   = readField(fields, `spellDuration${i}`);
     const subParts = [time, range, dur, comps].filter(Boolean).map(s => String(s).trim());
 
-    const display = String(name).trim();
     spellsByLevel[level].push({
-      id: display.toLowerCase(),
+      id,
       name: display,
       sub: subParts.join(' · '),
     });

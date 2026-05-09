@@ -36,9 +36,20 @@ export function compose({ action, activeMods, modParams, modifiers, custom }) {
   if (action.kind === 'spell' && action.upcastTo > action.level) {
     argParts.push(`-l ${action.upcastTo}`);
   }
+  // Avrae targets: -t "<name>" repeated per target, only on attacks/spells.
+  if ((action.kind === 'attack' || action.kind === 'spell') && action.targets?.length) {
+    for (const t of action.targets) {
+      argParts.push(`-t "${t}"`);
+    }
+  }
   for (const modId of activeMods) {
     const mod = modifiers.find(m => m.id === modId);
-    if (!mod || !mod.applies.includes(action.kind)) continue;
+    if (!mod) continue;
+    // Spells accept any toggled modifier — the user has explicit control
+    // via the side panel, and Avrae's !cast accepts the same flags as
+    // !attack (-b, -d, adv/dis, -phrase). Other action kinds (attack,
+    // save, check) still respect mod.applies as a guard.
+    if (action.kind !== 'spell' && !mod.applies.includes(action.kind)) continue;
     const a = composeFromMod(mod, modParams[modId] || {});
     if (a) argParts.push(a);
   }

@@ -1,4 +1,4 @@
-import { useCallback } from 'react';
+import { useCallback, useState } from 'react';
 import { compose } from '../composer.js';
 import { SAVE_DEFS, SKILL_DEFS } from '../state.js';
 import { TabBar, ActionCard, ModifierRow } from '../components.jsx';
@@ -7,6 +7,7 @@ const SLOT_LEVELS = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9];
 
 export default function RollView({
   character, modifiers,
+  targets, setTargets, selectedTargets, setSelectedTargets,
   tab, setTab,
   activeMods, setActiveMods, modParams, setModParams,
   custom, setCustom, castLevel, setCastLevel,
@@ -32,8 +33,11 @@ export default function RollView({
   };
 
   const fire = useCallback((action) => {
+    const targetNames = targets
+      .filter(t => selectedTargets[t.id])
+      .map(t => t.name);
     const cmd = compose({
-      action,
+      action: { ...action, targets: targetNames },
       activeMods: Object.keys(activeMods),
       modParams, modifiers, custom,
     });
@@ -45,7 +49,7 @@ export default function RollView({
     if (navigator.clipboard) navigator.clipboard.writeText(cmd).catch(() => {});
     setCopied(true);
     setTimeout(() => setCopied(false), 1500);
-  }, [activeMods, modParams, modifiers, custom, setComposed, setHistory, setCopied]);
+  }, [activeMods, modParams, modifiers, custom, targets, selectedTargets, setComposed, setHistory, setCopied]);
 
   const clearMods = () => {
     setActiveMods({});
@@ -147,7 +151,13 @@ export default function RollView({
         </section>
 
         <aside className="lg:col-span-2">
-          <div className="flex items-baseline justify-between mb-2">
+          <TargetsPanel
+            targets={targets} setTargets={setTargets}
+            selectedTargets={selectedTargets} setSelectedTargets={setSelectedTargets}
+            actionAccepts={tab === 'attacks' || tab === 'spells'}
+          />
+
+          <div className="flex items-baseline justify-between mb-2 mt-5">
             <h2 className="font-display text-gold text-sm">MODIFIERS</h2>
             <button onClick={clearMods}
                     className="text-xs text-fade hover:text-parchment font-cmd">
@@ -269,6 +279,110 @@ function EmptyState({ text }) {
   return (
     <div className="text-fade italic text-sm text-center py-12 border border-gold rounded-sm">
       {text}
+    </div>
+  );
+}
+
+function TargetsPanel({ targets, setTargets, selectedTargets, setSelectedTargets, actionAccepts }) {
+  const [draft, setDraft] = useState('');
+
+  const addTarget = (e) => {
+    e.preventDefault();
+    const name = draft.trim();
+    if (!name) return;
+    if (targets.some(t => t.name.toLowerCase() === name.toLowerCase())) {
+      setDraft('');
+      return;
+    }
+    const id = `tgt_${Date.now().toString(36)}`;
+    setTargets(prev => [...prev, { id, name }]);
+    setSelectedTargets(prev => ({ ...prev, [id]: true }));
+    setDraft('');
+  };
+
+  const removeTarget = (id) => {
+    setTargets(prev => prev.filter(t => t.id !== id));
+    setSelectedTargets(prev => {
+      const next = { ...prev };
+      delete next[id];
+      return next;
+    });
+  };
+
+  const toggle = (id) => {
+    setSelectedTargets(prev => {
+      const next = { ...prev };
+      if (next[id]) delete next[id];
+      else next[id] = true;
+      return next;
+    });
+  };
+
+  const selectedCount = targets.filter(t => selectedTargets[t.id]).length;
+
+  return (
+    <div>
+      <div className="flex items-baseline justify-between mb-2">
+        <h2 className="font-display text-gold text-sm">
+          TARGETS{selectedCount > 0 && <span className="text-fade font-cmd"> · {selectedCount} selected</span>}
+        </h2>
+        {selectedCount > 0 && (
+          <button onClick={() => setSelectedTargets({})}
+                  className="text-xs text-fade hover:text-parchment font-cmd">
+            clear selection
+          </button>
+        )}
+      </div>
+      <div className="divider mb-3" />
+
+      <form onSubmit={addTarget} className="flex gap-2 mb-3">
+        <input className="lined flex-1" placeholder="add target name…"
+               value={draft}
+               onChange={e => setDraft(e.target.value)} />
+        <button type="submit"
+                disabled={!draft.trim()}
+                className="text-xs font-cmd text-gold border border-gold px-2 py-0.5 hover:bg-active rounded-sm disabled:opacity-40">
+          + add
+        </button>
+      </form>
+
+      {!actionAccepts && targets.length > 0 && (
+        <div className="text-fade italic text-xs mb-2">
+          targets are ignored for saves &amp; skill checks
+        </div>
+      )}
+
+      <div className="space-y-1.5">
+        {targets.map(t => {
+          const active = !!selectedTargets[t.id];
+          return (
+            <div key={t.id}
+                 onClick={() => toggle(t.id)}
+                 className={`flex items-center gap-2 border rounded-sm px-2 py-1.5 cursor-pointer transition ${
+                   active ? 'bg-active glow-active border-gold-strong' : 'bg-card border-gold hover:bg-card-hover'
+                 }`}>
+              <div className={`w-3.5 h-3.5 border rounded-sm flex-shrink-0 flex items-center justify-center text-xs ${
+                     active ? 'border-gold-strong' : 'border-gold'
+                   }`}
+                   style={active ? { backgroundColor: '#d4a644', color: '#14100c' } : {}}>
+                {active && '✓'}
+              </div>
+              <span className={`flex-1 text-sm font-cmd truncate ${active ? 'text-parchment' : 'text-fade'}`}>
+                {t.name}
+              </span>
+              <button onClick={(e) => { e.stopPropagation(); removeTarget(t.id); }}
+                      className="text-fade hover:text-crimson text-sm flex-shrink-0">
+                ✕
+              </button>
+            </div>
+          );
+        })}
+        {targets.length === 0 && (
+          <div className="text-fade italic text-sm text-center py-4">
+            no targets — add one above
+          </div>
+        )}
+      </div>
     </div>
   );
 }
