@@ -1,0 +1,126 @@
+import { useState, useEffect, useMemo } from 'react';
+import { DEFAULT_CHARACTER, DEFAULT_MODIFIERS, loadState, saveState } from './state.js';
+import RollView from './views/RollView.jsx';
+import ModifierForgeView from './views/ModifierForgeView.jsx';
+import CharacterView from './views/CharacterView.jsx';
+
+const MODES = [
+  { id: 'roll',      label: 'Roll' },
+  { id: 'character', label: 'Character' },
+  { id: 'modifiers', label: 'Modifiers' },
+];
+
+export default function App() {
+  // Hydrate from localStorage if available; otherwise use defaults.
+  const initial = useMemo(() => loadState() || {}, []);
+
+  const [mode,      setMode]      = useState('roll');
+  const [character, setCharacter] = useState(initial.character || DEFAULT_CHARACTER);
+  const [modifiers, setModifiers] = useState(initial.modifiers || DEFAULT_MODIFIERS);
+  const [channel,   setChannel]   = useState(initial.channel || '#party-roll');
+
+  // Ephemeral roll-view state — not persisted.
+  const [tab,        setTab]        = useState('attacks');
+  const [activeMods, setActiveMods] = useState({});
+  const [modParams,  setModParams]  = useState({});
+  const [custom,     setCustom]     = useState({ bonus: '', damage: '' });
+  const [castLevel,  setCastLevel]  = useState({});
+  const [composed,   setComposed]   = useState('');
+  const [history,    setHistory]    = useState([]);
+  const [copied,     setCopied]     = useState(false);
+
+  // Persist whenever the durable bits change.
+  useEffect(() => {
+    saveState({ character, modifiers, channel });
+  }, [character, modifiers, channel]);
+
+  return (
+    <div className="bg-grimoire grain font-body text-parchment min-h-screen relative overflow-hidden">
+      <Header
+        mode={mode} setMode={setMode}
+        character={character}
+        channel={channel} setChannel={setChannel}
+      />
+      {mode === 'roll' && (
+        <RollView
+          character={character}
+          modifiers={modifiers}
+          tab={tab} setTab={setTab}
+          activeMods={activeMods} setActiveMods={setActiveMods}
+          modParams={modParams} setModParams={setModParams}
+          custom={custom} setCustom={setCustom}
+          castLevel={castLevel} setCastLevel={setCastLevel}
+          composed={composed} setComposed={setComposed}
+          history={history} setHistory={setHistory}
+          copied={copied} setCopied={setCopied}
+          channel={channel}
+        />
+      )}
+      {mode === 'character' && (
+        <CharacterView character={character} setCharacter={setCharacter} />
+      )}
+      {mode === 'modifiers' && (
+        <ModifierForgeView
+          modifiers={modifiers} setModifiers={setModifiers}
+          activeMods={activeMods} setActiveMods={setActiveMods}
+        />
+      )}
+    </div>
+  );
+}
+
+function Header({ mode, setMode, character, channel, setChannel }) {
+  const subhead =
+    mode === 'character' ? 'authoring · changes save automatically' :
+    mode === 'modifiers' ? 'forge toggleable buffs, debuffs, and conditions that stack onto your rolls' :
+    null;
+
+  return (
+    <header className="relative z-10 px-6 pt-6 pb-3 max-w-7xl mx-auto">
+      <div className="flex items-baseline justify-between mb-1 gap-4 flex-wrap">
+        <h1 className="font-display text-gold text-2xl font-bold">GRIMOIRE</h1>
+        <nav className="flex items-center gap-1">
+          {MODES.map(m => (
+            <button key={m.id}
+                    onClick={() => setMode(m.id)}
+                    className={`text-xs font-cmd uppercase tracking-wider px-3 py-1.5 border transition ${
+                      mode === m.id
+                        ? 'text-gold border-gold-strong bg-active'
+                        : 'text-fade border-gold hover:bg-active hover:text-parchment'
+                    }`}>
+              {m.label}
+            </button>
+          ))}
+        </nav>
+        <div className="flex items-center gap-2 text-xs text-fade font-cmd">
+          <span>channel:</span>
+          <input className="lined w-32 text-right" value={channel}
+                 onChange={e => setChannel(e.target.value)} />
+        </div>
+      </div>
+      <div className="divider mb-3" />
+      {mode === 'roll' ? (
+        <div className="flex items-baseline justify-between gap-4 flex-wrap">
+          <div>
+            <div className="font-display text-xl">{character.name || '— unnamed —'}</div>
+            <div className="text-fade text-sm">
+              {[character.ancestry, character.klass, `Level ${character.level}`]
+                .filter(Boolean).join(' · ')}
+            </div>
+          </div>
+          <div className="text-right text-xs text-fade font-cmd">
+            <div>HP {character.hp.current}/{character.hp.max}{character.hp.temp ? ` (+${character.hp.temp})` : ''} · AC {character.ac} · Spd {character.speed}</div>
+            <div>PB +{character.profBonus} · Insp {character.inspiration ? '●' : '◯'}</div>
+          </div>
+        </div>
+      ) : (
+        <div>
+          <div className="font-display text-xl text-gold">
+            {mode === 'character' ? 'CHARACTER SHEET' : 'MODIFIER FORGE'}
+          </div>
+          {subhead && <div className="text-fade text-sm italic">{subhead}</div>}
+        </div>
+      )}
+    </header>
+  );
+}
