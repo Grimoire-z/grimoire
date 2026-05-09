@@ -25,17 +25,18 @@ This file is the source of truth for project memory. It's committed to the repo 
 - `electron/main.cjs` — Electron main process; loads dev URL or `dist/index.html`. Sandbox enabled, devtools open detached in dev
 - `electron/preload.cjs` — exposes `window.grimoire` (platform info)
 - `src/main.jsx` — Vite entry
-- `src/App.jsx` — top-level component: header, mode switching (Roll / Character / Targets / Modifiers)
+- `src/App.jsx` — top-level component: header, mode switching (Roll / Character / Targets / Modifiers / Settings)
 - `src/state.js` — DEFAULT_CHARACTER, DEFAULT_MODIFIERS, DEFAULT_SETTINGS (theme/fontPreset), SAVE_DEFS, SKILL_DEFS, loadState/saveState (localStorage)
 - `src/composer.js` — pure command composition (compose, composeFromMod, substituteParams)
 - `src/ddbImport.js` — D&D Beyond JSON → partial character mapping (best-effort)
 - `src/ddbPdfImport.js` — D&D Beyond fillable PDF importer; uses pdfjs-dist worker via `?worker` Vite import
-- `src/components.jsx` — shared (Checkbox, TabBar, ActionCard, ModifierRow, FieldLabel, SectionCard, SettingsMenu, D20Icon)
-- `src/themes.js` — registry of color themes and font presets surfaced in SettingsMenu (paired with CSS blocks in `index.css`)
+- `src/components.jsx` — shared (Checkbox, TabBar, ActionCard, ModifierRow, FieldLabel, SectionCard, D20Icon)
+- `src/themes.js` — registry of color themes and font presets surfaced in SettingsView (paired with CSS blocks in `index.css`)
 - `src/views/RollView.jsx` — composer view; targets/modifiers/spells side panel, paginated spells, attack/spell dedup
 - `src/views/CharacterView.jsx` — Roll20-style sheet editor (identity, combat, abilities, saves, skills, attacks, spells, DDB import)
 - `src/views/ModifierForgeView.jsx` — modifier library editor
 - `src/views/TargetsView.jsx` — target book; folders + targets
+- `src/views/SettingsView.jsx` — full-page settings (theme + font preset chooser); reached via the d20 button in the header
 - `src/index.css` — Google Fonts + Tailwind import + custom theme classes
 - `scripts/inspect-pdf.mjs`, `scripts/test-mapper.mjs` — offline diagnostic tools for tuning the PDF importer; useful when DDB shifts the layout
 
@@ -57,7 +58,8 @@ This file is the source of truth for project memory. It's committed to the repo 
 ### Theming (v0.4+)
 
 - All colors and font families flow through CSS variables defined in `src/index.css`. Default values live on `:root`. Each named theme/font preset has a `[data-theme="..."]` / `[data-font-preset="..."]` block that overrides those vars.
-- The d20 button in the header (top-right of `App.jsx`'s `Header`) opens `SettingsMenu` (in `components.jsx`), which writes `settings.theme` and `settings.fontPreset` into the persisted state slice.
+- The d20 button in the header (right of the channel input in `App.jsx`'s `Header`) is a navigation control — clicking it sets `mode = 'settings'`, rendering `SettingsView` as a full page (same pattern as Roll / Character / Targets / Modifiers). The 'settings' mode is intentionally NOT in the `MODES` nav array; the d20 is its only entry point so the main nav stays at four items. Going back to any other mode is just clicking that mode's nav button.
+- The popover pattern was tried first (v0.4 initial commit) and abandoned because the App's root `overflow-hidden` clipped it and z-stacking against the header was fragile. A separate page sidesteps both issues and gives room for future settings sections.
 - An effect in `App.jsx` mirrors `settings.theme` / `settings.fontPreset` to `document.documentElement.dataset` so the var swap reaches every node.
 - Theme/font preset metadata (id, label, swatch colors, sample font-families) lives in `src/themes.js`. Adding a new theme = (1) add a `[data-theme="..."]` block in `index.css`, (2) register an entry in `THEMES` in `themes.js`. Same pattern for fonts via `FONT_PRESETS`.
 - `--color-gold-rgb` / `--color-crimson-rgb` are stored as comma-separated triplets so existing `rgba(...)` alpha-tinted borders and shadows compose with the theme color via `rgba(var(--color-gold-rgb), 0.35)`.

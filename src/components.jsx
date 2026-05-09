@@ -1,8 +1,5 @@
 // Small shared sub-components used by multiple views.
 
-import { useEffect, useRef, useState } from 'react';
-import { THEMES, FONT_PRESETS } from './themes.js';
-
 export function Checkbox({ label, checked, onChange, compact }) {
   return (
     <label
@@ -112,10 +109,7 @@ export function SectionCard({ title, children, right }) {
   );
 }
 
-// ─── Settings menu (toggleable from header) ─────────────────────────────
-
-// d20 silhouette: outer hexagon with internal triangle subdivisions and a
-// "20" in the visible top face. Sized by the surrounding font/box.
+// d20 silhouette used as the Settings nav button. Sized by the surrounding box.
 export function D20Icon({ size = 18 }) {
   return (
     <svg viewBox="0 0 24 24" width={size} height={size}
@@ -132,111 +126,5 @@ export function D20Icon({ size = 18 }) {
             fill="currentColor" stroke="none"
             fontFamily="var(--font-cmd)" fontWeight="600">20</text>
     </svg>
-  );
-}
-
-export function SettingsMenu({ settings, setSettings }) {
-  const [open, setOpen] = useState(false);
-  const rootRef = useRef(null);
-
-  // Close on outside click or Escape.
-  useEffect(() => {
-    if (!open) return;
-    function onDocDown(e) {
-      if (rootRef.current && !rootRef.current.contains(e.target)) setOpen(false);
-    }
-    function onKey(e) { if (e.key === 'Escape') setOpen(false); }
-    document.addEventListener('mousedown', onDocDown);
-    document.addEventListener('keydown', onKey);
-    return () => {
-      document.removeEventListener('mousedown', onDocDown);
-      document.removeEventListener('keydown', onKey);
-    };
-  }, [open]);
-
-  return (
-    <div ref={rootRef} className="popover-anchor">
-      <button
-        type="button"
-        onClick={() => setOpen(o => !o)}
-        title="Settings"
-        aria-label="Settings"
-        aria-expanded={open}
-        className={`flex items-center justify-center w-8 h-8 border rounded-sm transition ${
-          open ? 'text-gold border-gold-strong bg-active'
-               : 'text-fade border-gold hover:text-parchment hover:bg-active'
-        }`}
-      >
-        <D20Icon size={18} />
-      </button>
-      {open && (
-        <div className="absolute right-0 mt-2 w-80 bg-card border border-gold-strong rounded-sm shadow-2xl z-50 p-4 scrollbar-thin"
-             style={{ boxShadow: '0 12px 32px rgba(0,0,0,0.5), 0 0 0 1px rgba(var(--color-gold-rgb),0.15)' }}>
-          <h4 className="font-display text-gold text-xs uppercase tracking-wider mb-2">Theme</h4>
-          <div className="grid grid-cols-2 gap-2 mb-4">
-            {THEMES.map(t => (
-              <ThemeSwatch key={t.id} theme={t}
-                active={settings.theme === t.id}
-                onSelect={() => setSettings(s => ({ ...s, theme: t.id }))} />
-            ))}
-          </div>
-          <h4 className="font-display text-gold text-xs uppercase tracking-wider mb-2">Fonts</h4>
-          <div className="flex flex-col gap-2">
-            {FONT_PRESETS.map(p => (
-              <FontSwatch key={p.id} preset={p}
-                active={settings.fontPreset === p.id}
-                onSelect={() => setSettings(s => ({ ...s, fontPreset: p.id }))} />
-            ))}
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-function ThemeSwatch({ theme, active, onSelect }) {
-  return (
-    <button type="button" onClick={onSelect}
-      className={`text-left p-2 border rounded-sm transition ${
-        active ? 'border-gold-strong bg-active' : 'border-gold hover:bg-card-hover'
-      }`}
-      title={theme.sub}
-    >
-      <div className="flex gap-1 mb-1.5">
-        <span className="w-4 h-4 rounded-sm border" style={{ backgroundColor: theme.swatch.bg,    borderColor: 'rgba(255,255,255,0.1)' }} />
-        <span className="w-4 h-4 rounded-sm border" style={{ backgroundColor: theme.swatch.card,  borderColor: 'rgba(255,255,255,0.1)' }} />
-        <span className="w-4 h-4 rounded-sm border" style={{ backgroundColor: theme.swatch.accent, borderColor: 'rgba(0,0,0,0.2)' }} />
-        <span className="w-4 h-4 rounded-sm border" style={{ backgroundColor: theme.swatch.danger, borderColor: 'rgba(0,0,0,0.2)' }} />
-      </div>
-      <div className={`font-display text-xs uppercase tracking-wider ${active ? 'text-gold' : 'text-parchment'}`}>
-        {theme.name}
-      </div>
-      <div className="text-fade text-[10px] italic truncate">{theme.sub}</div>
-    </button>
-  );
-}
-
-function FontSwatch({ preset, active, onSelect }) {
-  return (
-    <button type="button" onClick={onSelect}
-      className={`text-left p-2 border rounded-sm transition flex items-baseline justify-between gap-2 ${
-        active ? 'border-gold-strong bg-active' : 'border-gold hover:bg-card-hover'
-      }`}
-      title={preset.sub}
-    >
-      <div className="min-w-0">
-        <div className={`text-xs uppercase tracking-wider ${active ? 'text-gold' : 'text-parchment'}`}
-             style={{ fontFamily: preset.sample.display, letterSpacing: '0.06em' }}>
-          {preset.name}
-        </div>
-        <div className="text-fade text-[10px] italic truncate" style={{ fontFamily: preset.sample.body }}>
-          {preset.sub}
-        </div>
-      </div>
-      <span className="text-2xl leading-none flex-shrink-0"
-            style={{ fontFamily: preset.sample.display, color: active ? 'var(--color-gold)' : 'var(--color-fade)' }}>
-        Aa
-      </span>
-    </button>
   );
 }

@@ -4,7 +4,8 @@ import RollView from './views/RollView.jsx';
 import ModifierForgeView from './views/ModifierForgeView.jsx';
 import CharacterView from './views/CharacterView.jsx';
 import TargetsView from './views/TargetsView.jsx';
-import { SettingsMenu } from './components.jsx';
+import SettingsView from './views/SettingsView.jsx';
+import { D20Icon } from './components.jsx';
 
 const MODES = [
   { id: 'roll',      label: 'Roll' },
@@ -54,7 +55,6 @@ export default function App() {
         mode={mode} setMode={setMode}
         character={character}
         channel={channel} setChannel={setChannel}
-        settings={settings} setSettings={setSettings}
       />
       {mode === 'roll' && (
         <RollView
@@ -88,15 +88,19 @@ export default function App() {
           activeMods={activeMods} setActiveMods={setActiveMods}
         />
       )}
+      {mode === 'settings' && (
+        <SettingsView settings={settings} setSettings={setSettings} />
+      )}
     </div>
   );
 }
 
-function Header({ mode, setMode, character, channel, setChannel, settings, setSettings }) {
+function Header({ mode, setMode, character, channel, setChannel }) {
   const subhead =
     mode === 'character' ? 'authoring · changes save automatically' :
     mode === 'targets'   ? 'organize encounter targets into folders' :
     mode === 'modifiers' ? 'forge toggleable buffs, debuffs, and conditions that stack onto your rolls' :
+    mode === 'settings'  ? 'theme & typography · more options to come' :
     null;
 
   return (
@@ -120,7 +124,20 @@ function Header({ mode, setMode, character, channel, setChannel, settings, setSe
           <span>channel:</span>
           <input className="lined w-32 text-right" value={channel}
                  onChange={e => setChannel(e.target.value)} />
-          <SettingsMenu settings={settings} setSettings={setSettings} />
+          <button
+            type="button"
+            onClick={() => setMode('settings')}
+            title="Settings"
+            aria-label="Settings"
+            aria-pressed={mode === 'settings'}
+            className={`flex items-center justify-center w-8 h-8 border rounded-sm transition ${
+              mode === 'settings'
+                ? 'text-gold border-gold-strong bg-active'
+                : 'text-fade border-gold hover:text-parchment hover:bg-active'
+            }`}
+          >
+            <D20Icon size={18} />
+          </button>
         </div>
       </div>
       <div className="divider mb-3" />
@@ -143,6 +160,7 @@ function Header({ mode, setMode, character, channel, setChannel, settings, setSe
           <div className="font-display text-xl text-gold">
             {mode === 'character' ? 'CHARACTER SHEET'
               : mode === 'targets' ? 'TARGET BOOK'
+              : mode === 'settings' ? 'SETTINGS'
               : 'MODIFIER FORGE'}
           </div>
           {subhead && <div className="text-fade text-sm italic">{subhead}</div>}
