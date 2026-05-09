@@ -7,7 +7,7 @@ const SLOT_LEVELS = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9];
 
 export default function RollView({
   character, modifiers,
-  targets, setTargets, selectedTargets, setSelectedTargets,
+  targets, folders, selectedTargets, setSelectedTargets,
   tab, setTab,
   activeMods, setActiveMods, modParams, setModParams,
   custom, setCustom, castLevel, setCastLevel,
@@ -151,7 +151,7 @@ export default function RollView({
 
         <aside className="lg:col-span-2">
           <TargetsPanel
-            targets={targets} setTargets={setTargets}
+            targets={targets} folders={folders}
             selectedTargets={selectedTargets} setSelectedTargets={setSelectedTargets}
             actionAccepts={tab === 'attacks' || tab === 'spells'}
           />
@@ -364,32 +364,7 @@ function EmptyState({ text }) {
   );
 }
 
-function TargetsPanel({ targets, setTargets, selectedTargets, setSelectedTargets, actionAccepts }) {
-  const [draft, setDraft] = useState('');
-
-  const addTarget = (e) => {
-    e.preventDefault();
-    const name = draft.trim();
-    if (!name) return;
-    if (targets.some(t => t.name.toLowerCase() === name.toLowerCase())) {
-      setDraft('');
-      return;
-    }
-    const id = `tgt_${Date.now().toString(36)}`;
-    setTargets(prev => [...prev, { id, name }]);
-    setSelectedTargets(prev => ({ ...prev, [id]: true }));
-    setDraft('');
-  };
-
-  const removeTarget = (id) => {
-    setTargets(prev => prev.filter(t => t.id !== id));
-    setSelectedTargets(prev => {
-      const next = { ...prev };
-      delete next[id];
-      return next;
-    });
-  };
-
+function TargetsPanel({ targets, folders, selectedTargets, setSelectedTargets, actionAccepts }) {
   const toggle = (id) => {
     setSelectedTargets(prev => {
       const next = { ...prev };
@@ -400,6 +375,10 @@ function TargetsPanel({ targets, setTargets, selectedTargets, setSelectedTargets
   };
 
   const selectedCount = targets.filter(t => selectedTargets[t.id]).length;
+  const folderIds = new Set(folders.map(f => f.id));
+  const targetsInFolder = (fid) =>
+    targets.filter(t => (fid == null ? !folderIds.has(t.folderId) : t.folderId === fid));
+  const ungrouped = targetsInFolder(null);
 
   return (
     <div>
@@ -416,54 +395,87 @@ function TargetsPanel({ targets, setTargets, selectedTargets, setSelectedTargets
       </div>
       <div className="divider mb-3" />
 
-      <form onSubmit={addTarget} className="flex gap-2 mb-3">
-        <input className="lined flex-1" placeholder="add target name…"
-               value={draft}
-               onChange={e => setDraft(e.target.value)} />
-        <button type="submit"
-                disabled={!draft.trim()}
-                className="text-xs font-cmd text-gold border border-gold px-2 py-0.5 hover:bg-active rounded-sm disabled:opacity-40">
-          + add
-        </button>
-      </form>
-
       {!actionAccepts && targets.length > 0 && (
         <div className="text-fade italic text-xs mb-2">
           targets are ignored for saves &amp; skill checks
         </div>
       )}
 
-      <div className="space-y-1.5">
-        {targets.map(t => {
-          const active = !!selectedTargets[t.id];
-          return (
-            <div key={t.id}
-                 onClick={() => toggle(t.id)}
-                 className={`flex items-center gap-2 border rounded-sm px-2 py-1.5 cursor-pointer transition ${
-                   active ? 'bg-active glow-active border-gold-strong' : 'bg-card border-gold hover:bg-card-hover'
-                 }`}>
-              <div className={`w-3.5 h-3.5 border rounded-sm flex-shrink-0 flex items-center justify-center text-xs ${
-                     active ? 'border-gold-strong' : 'border-gold'
-                   }`}
-                   style={active ? { backgroundColor: '#d4a644', color: '#14100c' } : {}}>
-                {active && '✓'}
-              </div>
-              <span className={`flex-1 text-sm font-cmd truncate ${active ? 'text-parchment' : 'text-fade'}`}>
-                {t.name}
-              </span>
-              <button onClick={(e) => { e.stopPropagation(); removeTarget(t.id); }}
-                      className="text-fade hover:text-crimson text-sm flex-shrink-0">
-                ✕
-              </button>
-            </div>
-          );
-        })}
+      <div className="space-y-2">
+        {folders.map(f => (
+          <TargetGroup
+            key={f.id}
+            label={f.name || '(unnamed folder)'}
+            targets={targetsInFolder(f.id)}
+            selectedTargets={selectedTargets}
+            onToggle={toggle}
+          />
+        ))}
+        {ungrouped.length > 0 && (
+          <TargetGroup
+            label="Ungrouped"
+            targets={ungrouped}
+            selectedTargets={selectedTargets}
+            onToggle={toggle}
+            mutedHeader
+          />
+        )}
         {targets.length === 0 && (
           <div className="text-fade italic text-sm text-center py-4">
-            no targets — add one above
+            no targets — open the <span className="text-gold">Targets</span> tab to create some
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+function TargetGroup({ label, targets, selectedTargets, onToggle, mutedHeader }) {
+  const [collapsed, setCollapsed] = useState(false);
+  const selCount = targets.filter(t => selectedTargets[t.id]).length;
+
+  return (
+    <div className="border border-gold rounded-sm bg-card">
+      <button
+        type="button"
+        onClick={() => setCollapsed(c => !c)}
+        className="w-full flex items-center gap-2 px-2 py-1.5 hover:bg-card-hover transition text-left"
+      >
+        <span className="text-gold font-cmd text-xs w-3">{collapsed ? '▶' : '▼'}</span>
+        <span className={`font-display text-xs uppercase tracking-wider flex-1 ${mutedHeader ? 'text-fade' : 'text-gold'}`}>
+          {label}
+        </span>
+        <span className="text-xs font-cmd text-fade">
+          {targets.length}{selCount > 0 && ` · ${selCount} sel`}
+        </span>
+      </button>
+      {!collapsed && (
+        <div className="space-y-1 px-2 pb-2 pt-1">
+          {targets.map(t => {
+            const active = !!selectedTargets[t.id];
+            return (
+              <div key={t.id}
+                   onClick={() => onToggle(t.id)}
+                   className={`flex items-center gap-2 border rounded-sm px-2 py-1 cursor-pointer transition ${
+                     active ? 'bg-active glow-active border-gold-strong' : 'bg-grimoire border-gold hover:bg-card-hover'
+                   }`}>
+                <div className={`w-3.5 h-3.5 border rounded-sm flex-shrink-0 flex items-center justify-center text-xs ${
+                       active ? 'border-gold-strong' : 'border-gold'
+                     }`}
+                     style={active ? { backgroundColor: '#d4a644', color: '#14100c' } : {}}>
+                  {active && '✓'}
+                </div>
+                <span className={`flex-1 text-sm font-cmd truncate ${active ? 'text-parchment' : 'text-fade'}`}>
+                  {t.name || <em className="italic">unnamed</em>}
+                </span>
+              </div>
+            );
+          })}
+          {targets.length === 0 && (
+            <div className="text-fade italic text-xs px-1 py-1">empty</div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

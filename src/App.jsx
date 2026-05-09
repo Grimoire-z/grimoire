@@ -3,10 +3,12 @@ import { DEFAULT_CHARACTER, DEFAULT_MODIFIERS, loadState, saveState } from './st
 import RollView from './views/RollView.jsx';
 import ModifierForgeView from './views/ModifierForgeView.jsx';
 import CharacterView from './views/CharacterView.jsx';
+import TargetsView from './views/TargetsView.jsx';
 
 const MODES = [
   { id: 'roll',      label: 'Roll' },
   { id: 'character', label: 'Character' },
+  { id: 'targets',   label: 'Targets' },
   { id: 'modifiers', label: 'Modifiers' },
 ];
 
@@ -18,6 +20,7 @@ export default function App() {
   const [character, setCharacter] = useState(initial.character || DEFAULT_CHARACTER);
   const [modifiers, setModifiers] = useState(initial.modifiers || DEFAULT_MODIFIERS);
   const [targets,   setTargets]   = useState(initial.targets || []);
+  const [folders,   setFolders]   = useState(initial.folders || []);
   const [channel,   setChannel]   = useState(initial.channel || '#party-roll');
 
   // Ephemeral roll-view state — not persisted.
@@ -33,8 +36,8 @@ export default function App() {
 
   // Persist whenever the durable bits change.
   useEffect(() => {
-    saveState({ character, modifiers, targets, channel });
-  }, [character, modifiers, targets, channel]);
+    saveState({ character, modifiers, targets, folders, channel });
+  }, [character, modifiers, targets, folders, channel]);
 
   return (
     <div className="bg-grimoire grain font-body text-parchment min-h-screen relative overflow-hidden">
@@ -47,7 +50,7 @@ export default function App() {
         <RollView
           character={character}
           modifiers={modifiers}
-          targets={targets} setTargets={setTargets}
+          targets={targets} folders={folders}
           selectedTargets={selectedTargets} setSelectedTargets={setSelectedTargets}
           tab={tab} setTab={setTab}
           activeMods={activeMods} setActiveMods={setActiveMods}
@@ -63,6 +66,12 @@ export default function App() {
       {mode === 'character' && (
         <CharacterView character={character} setCharacter={setCharacter} />
       )}
+      {mode === 'targets' && (
+        <TargetsView
+          targets={targets} setTargets={setTargets}
+          folders={folders} setFolders={setFolders}
+        />
+      )}
       {mode === 'modifiers' && (
         <ModifierForgeView
           modifiers={modifiers} setModifiers={setModifiers}
@@ -76,6 +85,7 @@ export default function App() {
 function Header({ mode, setMode, character, channel, setChannel }) {
   const subhead =
     mode === 'character' ? 'authoring · changes save automatically' :
+    mode === 'targets'   ? 'organize encounter targets into folders' :
     mode === 'modifiers' ? 'forge toggleable buffs, debuffs, and conditions that stack onto your rolls' :
     null;
 
@@ -120,7 +130,9 @@ function Header({ mode, setMode, character, channel, setChannel }) {
       ) : (
         <div>
           <div className="font-display text-xl text-gold">
-            {mode === 'character' ? 'CHARACTER SHEET' : 'MODIFIER FORGE'}
+            {mode === 'character' ? 'CHARACTER SHEET'
+              : mode === 'targets' ? 'TARGET BOOK'
+              : 'MODIFIER FORGE'}
           </div>
           {subhead && <div className="text-fade text-sm italic">{subhead}</div>}
         </div>
