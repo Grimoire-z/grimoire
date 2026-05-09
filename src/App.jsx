@@ -1,9 +1,10 @@
 import { useState, useEffect, useMemo } from 'react';
-import { DEFAULT_CHARACTER, DEFAULT_MODIFIERS, loadState, saveState } from './state.js';
+import { DEFAULT_CHARACTER, DEFAULT_MODIFIERS, DEFAULT_SETTINGS, loadState, saveState } from './state.js';
 import RollView from './views/RollView.jsx';
 import ModifierForgeView from './views/ModifierForgeView.jsx';
 import CharacterView from './views/CharacterView.jsx';
 import TargetsView from './views/TargetsView.jsx';
+import { SettingsMenu } from './components.jsx';
 
 const MODES = [
   { id: 'roll',      label: 'Roll' },
@@ -22,6 +23,7 @@ export default function App() {
   const [targets,   setTargets]   = useState(initial.targets || []);
   const [folders,   setFolders]   = useState(initial.folders || []);
   const [channel,   setChannel]   = useState(initial.channel || '#party-roll');
+  const [settings,  setSettings]  = useState({ ...DEFAULT_SETTINGS, ...(initial.settings || {}) });
 
   // Ephemeral roll-view state — not persisted.
   const [tab,             setTab]             = useState('attacks');
@@ -36,8 +38,15 @@ export default function App() {
 
   // Persist whenever the durable bits change.
   useEffect(() => {
-    saveState({ character, modifiers, targets, folders, channel });
-  }, [character, modifiers, targets, folders, channel]);
+    saveState({ character, modifiers, targets, folders, channel, settings });
+  }, [character, modifiers, targets, folders, channel, settings]);
+
+  // Apply theme + font preset to <html> so CSS-var swaps reach every node.
+  useEffect(() => {
+    const root = document.documentElement;
+    root.dataset.theme = settings.theme;
+    root.dataset.fontPreset = settings.fontPreset;
+  }, [settings.theme, settings.fontPreset]);
 
   return (
     <div className="bg-grimoire grain font-body text-parchment min-h-screen relative overflow-hidden">
@@ -45,6 +54,7 @@ export default function App() {
         mode={mode} setMode={setMode}
         character={character}
         channel={channel} setChannel={setChannel}
+        settings={settings} setSettings={setSettings}
       />
       {mode === 'roll' && (
         <RollView
@@ -82,7 +92,7 @@ export default function App() {
   );
 }
 
-function Header({ mode, setMode, character, channel, setChannel }) {
+function Header({ mode, setMode, character, channel, setChannel, settings, setSettings }) {
   const subhead =
     mode === 'character' ? 'authoring · changes save automatically' :
     mode === 'targets'   ? 'organize encounter targets into folders' :
@@ -110,6 +120,7 @@ function Header({ mode, setMode, character, channel, setChannel }) {
           <span>channel:</span>
           <input className="lined w-32 text-right" value={channel}
                  onChange={e => setChannel(e.target.value)} />
+          <SettingsMenu settings={settings} setSettings={setSettings} />
         </div>
       </div>
       <div className="divider mb-3" />

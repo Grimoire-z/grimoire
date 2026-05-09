@@ -26,11 +26,12 @@ This file is the source of truth for project memory. It's committed to the repo 
 - `electron/preload.cjs` — exposes `window.grimoire` (platform info)
 - `src/main.jsx` — Vite entry
 - `src/App.jsx` — top-level component: header, mode switching (Roll / Character / Targets / Modifiers)
-- `src/state.js` — DEFAULT_CHARACTER, DEFAULT_MODIFIERS, SAVE_DEFS, SKILL_DEFS, loadState/saveState (localStorage)
+- `src/state.js` — DEFAULT_CHARACTER, DEFAULT_MODIFIERS, DEFAULT_SETTINGS (theme/fontPreset), SAVE_DEFS, SKILL_DEFS, loadState/saveState (localStorage)
 - `src/composer.js` — pure command composition (compose, composeFromMod, substituteParams)
 - `src/ddbImport.js` — D&D Beyond JSON → partial character mapping (best-effort)
 - `src/ddbPdfImport.js` — D&D Beyond fillable PDF importer; uses pdfjs-dist worker via `?worker` Vite import
-- `src/components.jsx` — shared (Checkbox, TabBar, ActionCard, ModifierRow, FieldLabel, SectionCard)
+- `src/components.jsx` — shared (Checkbox, TabBar, ActionCard, ModifierRow, FieldLabel, SectionCard, SettingsMenu, D20Icon)
+- `src/themes.js` — registry of color themes and font presets surfaced in SettingsMenu (paired with CSS blocks in `index.css`)
 - `src/views/RollView.jsx` — composer view; targets/modifiers/spells side panel, paginated spells, attack/spell dedup
 - `src/views/CharacterView.jsx` — Roll20-style sheet editor (identity, combat, abilities, saves, skills, attacks, spells, DDB import)
 - `src/views/ModifierForgeView.jsx` — modifier library editor
@@ -52,6 +53,16 @@ This file is the source of truth for project memory. It's committed to the repo 
 - `compose()` builds the Avrae command string. Spells inherit attack-mode modifiers automatically; other action kinds (attack, save, check) respect `mod.applies`.
 - Targets emit as `-t "<name>"` per selected target, only on attacks/spells.
 - Per-action phrase emits as `-phrase "..."` last so it shows in Avrae's result text.
+
+### Theming (v0.4+)
+
+- All colors and font families flow through CSS variables defined in `src/index.css`. Default values live on `:root`. Each named theme/font preset has a `[data-theme="..."]` / `[data-font-preset="..."]` block that overrides those vars.
+- The d20 button in the header (top-right of `App.jsx`'s `Header`) opens `SettingsMenu` (in `components.jsx`), which writes `settings.theme` and `settings.fontPreset` into the persisted state slice.
+- An effect in `App.jsx` mirrors `settings.theme` / `settings.fontPreset` to `document.documentElement.dataset` so the var swap reaches every node.
+- Theme/font preset metadata (id, label, swatch colors, sample font-families) lives in `src/themes.js`. Adding a new theme = (1) add a `[data-theme="..."]` block in `index.css`, (2) register an entry in `THEMES` in `themes.js`. Same pattern for fonts via `FONT_PRESETS`.
+- `--color-gold-rgb` / `--color-crimson-rgb` are stored as comma-separated triplets so existing `rgba(...)` alpha-tinted borders and shadows compose with the theme color via `rgba(var(--color-gold-rgb), 0.35)`.
+- New themes should preserve role semantics: `gold` is the primary accent, `crimson` is for danger / low-resource indicators. Shift hue/saturation, don't swap roles.
+- Inline `style={{ backgroundColor: '#d4a644' }}` ad-hoc colors should be `style={{ backgroundColor: 'var(--color-gold)' }}` so theme swaps reach them. The few legacy spots in `components.jsx` (Checkbox/ModifierRow filled checkmark, TabBar underline) have been converted; keep the convention going.
 
 ### Targets & folders (v0.3+)
 

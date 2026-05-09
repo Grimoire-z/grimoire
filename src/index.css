@@ -1,65 +1,168 @@
-@import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700;900&family=Crimson+Pro:ital,wght@0,400;0,500;0,700;1,400&family=JetBrains+Mono:wght@400;600&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700;900&family=Crimson+Pro:ital,wght@0,400;0,500;0,700;1,400&family=JetBrains+Mono:wght@400;600&family=IM+Fell+English:ital@0;1&family=IM+Fell+English+SC&family=Inter:wght@400;500;600;700&display=swap');
 @import "tailwindcss";
 
-.font-display { font-family: 'Cinzel', 'Trajan Pro', serif; letter-spacing: 0.08em; }
-.font-body    { font-family: 'Crimson Pro', 'Garamond', serif; }
-.font-cmd     { font-family: 'JetBrains Mono', 'Menlo', monospace; letter-spacing: -0.01em; }
+/* ─── Theme tokens ──────────────────────────────────────────────────────────
+   All colors and font families are CSS variables so the SettingsMenu can
+   swap themes/fonts by setting [data-theme] / [data-font-preset] on <html>.
+   When adding a new theme: define a [data-theme="<id>"] block below and
+   register the id in src/themes.js.
+*/
+:root,
+[data-theme="grimoire"] {
+  --color-bg:          #14100c;
+  --color-card:        #1e1813;
+  --color-card-hover:  #2a2118;
+  --color-active:      #3a2a18;
+  --color-cmd-bg:      #0a0805;
+  --color-parchment:   #f0e4c8;
+  --color-fade:        #8a7a5e;
+  --color-gold:        #d4a644;
+  --color-gold-rgb:    212, 166, 68;
+  --color-crimson:     #b8434c;
+  --color-crimson-rgb: 184, 67, 76;
+}
 
-.bg-grimoire   { background-color: #14100c; }
-.bg-card       { background-color: #1e1813; }
-.bg-card-hover { background-color: #2a2118; }
-.bg-active     { background-color: #3a2a18; }
-.bg-cmd        { background-color: #0a0805; }
-.text-parchment{ color: #f0e4c8; }
-.text-fade     { color: #8a7a5e; }
-.text-gold     { color: #d4a644; }
-.text-crimson  { color: #b8434c; }
-.border-gold   { border-color: rgba(212, 166, 68, 0.35); }
-.border-gold-strong { border-color: rgba(212, 166, 68, 0.8); }
-.border-crimson { border-color: rgba(184, 67, 76, 0.7); }
+[data-theme="necromancer"] {
+  --color-bg:          #0e0a18;
+  --color-card:        #1a1230;
+  --color-card-hover:  #261940;
+  --color-active:      #3a2858;
+  --color-cmd-bg:      #060410;
+  --color-parchment:   #e8e0f0;
+  --color-fade:        #8a7ea0;
+  --color-gold:        #c4a8e8;
+  --color-gold-rgb:    196, 168, 232;
+  --color-crimson:     #a83a5a;
+  --color-crimson-rgb: 168, 58, 90;
+}
+
+[data-theme="sylvan"] {
+  --color-bg:          #0c1410;
+  --color-card:        #152018;
+  --color-card-hover:  #1c2a20;
+  --color-active:      #243a2c;
+  --color-cmd-bg:      #060a08;
+  --color-parchment:   #e8dfc8;
+  --color-fade:        #7e8a6e;
+  --color-gold:        #c08840;
+  --color-gold-rgb:    192, 136, 64;
+  --color-crimson:     #b8434c;
+  --color-crimson-rgb: 184, 67, 76;
+}
+
+[data-theme="crimson-bound"] {
+  --color-bg:          #16080a;
+  --color-card:        #241016;
+  --color-card-hover:  #321820;
+  --color-active:      #46202a;
+  --color-cmd-bg:      #0c0406;
+  --color-parchment:   #e8e0d0;
+  --color-fade:        #9a7a78;
+  --color-gold:        #c5c0a8;
+  --color-gold-rgb:    197, 192, 168;
+  --color-crimson:     #d04050;
+  --color-crimson-rgb: 208, 64, 80;
+}
+
+/* Font presets — same pattern. Default = Manuscript. */
+:root,
+[data-font-preset="manuscript"] {
+  --font-display:                'Cinzel', 'Trajan Pro', serif;
+  --font-body:                   'Crimson Pro', 'Garamond', serif;
+  --font-cmd:                    'JetBrains Mono', 'Menlo', monospace;
+  --font-display-letter-spacing: 0.08em;
+  --font-cmd-letter-spacing:     -0.01em;
+}
+
+[data-font-preset="antique"] {
+  --font-display:                'IM Fell English SC', 'Cinzel', serif;
+  --font-body:                   'IM Fell English', 'Crimson Pro', serif;
+  --font-cmd:                    'JetBrains Mono', 'Menlo', monospace;
+  --font-display-letter-spacing: 0.04em;
+  --font-cmd-letter-spacing:     -0.01em;
+}
+
+[data-font-preset="modern"] {
+  --font-display:                'Inter', system-ui, sans-serif;
+  --font-body:                   'Inter', system-ui, sans-serif;
+  --font-cmd:                    'JetBrains Mono', 'Menlo', monospace;
+  --font-display-letter-spacing: 0.04em;
+  --font-cmd-letter-spacing:     -0.01em;
+}
+
+/* ─── Class definitions (read from vars) ──────────────────────────────── */
+.font-display { font-family: var(--font-display); letter-spacing: var(--font-display-letter-spacing); }
+.font-body    { font-family: var(--font-body); }
+.font-cmd     { font-family: var(--font-cmd); letter-spacing: var(--font-cmd-letter-spacing); }
+
+.bg-grimoire   { background-color: var(--color-bg); }
+.bg-card       { background-color: var(--color-card); }
+.bg-card-hover { background-color: var(--color-card-hover); }
+.bg-active     { background-color: var(--color-active); }
+.bg-cmd        { background-color: var(--color-cmd-bg); }
+.text-parchment{ color: var(--color-parchment); }
+.text-fade     { color: var(--color-fade); }
+.text-gold     { color: var(--color-gold); }
+.text-crimson  { color: var(--color-crimson); }
+.border-gold        { border-color: rgba(var(--color-gold-rgb), 0.35); }
+.border-gold-strong { border-color: rgba(var(--color-gold-rgb), 0.8); }
+.border-crimson     { border-color: rgba(var(--color-crimson-rgb), 0.7); }
 
 html, body, #root { height: 100%; margin: 0; padding: 0; }
-body { background-color: #14100c; color: #f0e4c8; font-family: 'Crimson Pro', 'Garamond', serif; }
+body {
+  background-color: var(--color-bg);
+  color: var(--color-parchment);
+  font-family: var(--font-body);
+  /* Smooth color/font transitions on theme swap. */
+  transition: background-color 0.25s ease, color 0.25s ease;
+}
 
 .grain::before {
   content: ''; position: absolute; inset: 0; pointer-events: none; z-index: 0;
   background-image:
-    radial-gradient(circle at 25% 25%, rgba(212, 166, 68, 0.05) 1px, transparent 1px),
-    radial-gradient(circle at 75% 65%, rgba(212, 166, 68, 0.03) 1px, transparent 1px);
+    radial-gradient(circle at 25% 25%, rgba(var(--color-gold-rgb), 0.05) 1px, transparent 1px),
+    radial-gradient(circle at 75% 65%, rgba(var(--color-gold-rgb), 0.03) 1px, transparent 1px);
   background-size: 32px 32px, 24px 24px;
 }
 .divider {
   height: 1px;
-  background: linear-gradient(to right, transparent, rgba(212, 166, 68, 0.45), transparent);
+  background: linear-gradient(to right, transparent, rgba(var(--color-gold-rgb), 0.45), transparent);
 }
 .btn-action {
   transition: transform 0.12s ease, box-shadow 0.12s, background 0.15s, border-color 0.15s;
 }
 .btn-action:hover:not(:disabled) {
   transform: translateY(-1px);
-  box-shadow: 0 6px 16px rgba(212, 166, 68, 0.18);
-  border-color: rgba(212, 166, 68, 0.7);
+  box-shadow: 0 6px 16px rgba(var(--color-gold-rgb), 0.18);
+  border-color: rgba(var(--color-gold-rgb), 0.7);
 }
 .btn-action:active:not(:disabled) { transform: translateY(0); }
 .glow-active {
-  box-shadow: inset 0 0 0 1px rgba(212, 166, 68, 0.6), 0 0 18px rgba(212, 166, 68, 0.18);
+  box-shadow: inset 0 0 0 1px rgba(var(--color-gold-rgb), 0.6),
+              0 0 18px rgba(var(--color-gold-rgb), 0.18);
 }
 @keyframes copyflash {
-  0%   { background-color: rgba(212, 166, 68, 0.45); }
+  0%   { background-color: rgba(var(--color-gold-rgb), 0.45); }
   100% { background-color: transparent; }
 }
 .flash { animation: copyflash 0.7s ease-out; }
 input.lined, textarea.lined {
-  background: transparent; border: none; border-bottom: 1px solid rgba(212, 166, 68, 0.3);
-  color: #f0e4c8; font-family: 'JetBrains Mono', monospace; font-size: 0.85rem;
+  background: transparent; border: none;
+  border-bottom: 1px solid rgba(var(--color-gold-rgb), 0.3);
+  color: var(--color-parchment);
+  font-family: var(--font-cmd); font-size: 0.85rem;
   padding: 0.25rem 0.4rem; outline: none; width: 100%; resize: none;
 }
-input.lined:focus, textarea.lined:focus { border-bottom-color: rgba(212, 166, 68, 0.9); }
+input.lined:focus, textarea.lined:focus { border-bottom-color: rgba(var(--color-gold-rgb), 0.9); }
 select.lined {
-  background: #1e1813; color: #d4a644; border: 1px solid rgba(212, 166, 68, 0.4);
-  font-family: 'JetBrains Mono', monospace; font-size: 0.8rem; padding: 0.15rem 0.4rem;
-  border-radius: 2px; outline: none;
+  background: var(--color-card); color: var(--color-gold);
+  border: 1px solid rgba(var(--color-gold-rgb), 0.4);
+  font-family: var(--font-cmd); font-size: 0.8rem;
+  padding: 0.15rem 0.4rem; border-radius: 2px; outline: none;
 }
 .scrollbar-thin::-webkit-scrollbar { width: 6px; height: 6px; }
-.scrollbar-thin::-webkit-scrollbar-thumb { background: rgba(212, 166, 68, 0.3); border-radius: 3px; }
+.scrollbar-thin::-webkit-scrollbar-thumb { background: rgba(var(--color-gold-rgb), 0.3); border-radius: 3px; }
 .scrollbar-thin::-webkit-scrollbar-track { background: transparent; }
+
+/* Settings popover positioning helper. */
+.popover-anchor { position: relative; }

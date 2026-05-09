@@ -1,7 +1,14 @@
-// Persistent app state: character sheet + modifier library.
+// Persistent app state: character sheet + modifier library + UI settings.
 // localStorage with a versioned schema so we can migrate later.
 
+import { DEFAULT_THEME_ID, DEFAULT_FONT_PRESET_ID } from './themes.js';
+
 export const SCHEMA_VERSION = 1;
+
+export const DEFAULT_SETTINGS = {
+  theme: DEFAULT_THEME_ID,
+  fontPreset: DEFAULT_FONT_PRESET_ID,
+};
 
 const STORAGE_KEY = 'grimoire.state.v1';
 
