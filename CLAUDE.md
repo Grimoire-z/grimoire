@@ -104,3 +104,11 @@ The Character view's PDF import section has a diagnostics panel with field/widge
 - Prereqs: Node LTS, git, gh — all installable via `winget`
 - Workflow across machines: ask for a commit + push when context-switching; `git pull` on the other side picks up everything including this CLAUDE.md
 - localStorage character/modifier/target data does NOT sync across devices — that's a separate feature still on the TODO list
+
+## Working agreement (Claude)
+
+Every commit that introduces new project knowledge must update CLAUDE.md in the same commit. "New project knowledge" includes: architecture decisions, schema discoveries (especially DDB layout shifts), scope changes, items added to or crossed off the open-work list, gotchas worth remembering, and any "we decided X because Y" moments.
+
+Before staging a commit, pause and ask: would a Claude on another device, pulling only this commit, need this written down to keep working? If yes, the CLAUDE.md edit ships in the same commit as the code. If no, that's fine — but make the check explicit so the memory sync isn't skipped by accident.
+
+This keeps the cross-device loop unbroken: a `git pull` on the other side delivers the code change *and* the reasoning behind it together, no out-of-band handoff required.
