@@ -101,7 +101,7 @@ The Character view's PDF import section has a diagnostics panel with field/widge
 
 - Repo is at https://github.com/Grimoire-z/grimoire (private)
 - New device setup: `gh auth login` → `git clone` → `npm install` → `npm run electron:dev`
-- Prereqs: Node LTS, git, gh — all installable via `winget`
+- Prereqs: Node ≥22.13 (Node 24 LTS recommended — ESLint 10 / Vite 8 / pdfjs-dist 5.7 EBADENGINE warn below that), git, gh — all installable via `winget`
 - Workflow across machines: ask for a commit + push when context-switching; `git pull` on the other side picks up everything including this CLAUDE.md
 - localStorage character/modifier/target data does NOT sync across devices — that's a separate feature still on the TODO list
 
