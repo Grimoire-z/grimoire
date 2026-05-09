@@ -275,15 +275,19 @@ function mapFormFields(fields) {
     found.push('saves');
   }
 
-  // Skills
+  // Skills — DDB encodes proficiency as 'P' and expertise as 'E' in the
+  // <Skill>Prof field. Anything truthy is at least prof; 'E' upgrades to
+  // expertise.
   const skills = {};
   for (const [key, def] of Object.entries(DDB_SKILLS)) {
     const mod  = readField(fields, ...def.mod);
     const prof = readField(fields, ...def.prof);
     if (mod != null || prof != null) {
+      const profStr = prof != null ? String(prof).trim().toUpperCase() : '';
       skills[key] = {
         mod: mod != null ? String(mod).trim() : '',
         prof: checkboxTrue(prof),
+        expertise: profStr === 'E',
       };
     }
   }

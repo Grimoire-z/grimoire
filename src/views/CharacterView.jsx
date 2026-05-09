@@ -168,15 +168,23 @@ function Saves({ character, patchSave }) {
 }
 
 function Skills({ character, patchSkill }) {
+  const cycle = (s) => {
+    // none → prof → expertise → none
+    if (s.expertise) return { prof: false, expertise: false };
+    if (s.prof)      return { prof: true,  expertise: true  };
+    return                   { prof: true,  expertise: false };
+  };
   return (
     <SectionCard title="skills">
+      <div className="text-fade text-xs italic mb-2">
+        click the box to cycle untrained → proficient (✓) → expertise (★)
+      </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
         {SKILL_DEFS.map(def => {
-          const s = character.skills[def.id] || { mod: '', prof: false };
+          const s = character.skills[def.id] || { mod: '', prof: false, expertise: false };
           return (
             <div key={def.id} className="flex items-center gap-2 bg-grimoire border border-gold rounded-sm px-2 py-1.5">
-              <Checkbox label="" checked={s.prof}
-                        onChange={() => patchSkill(def.id, { prof: !s.prof })} />
+              <ProfTriState skill={s} onCycle={() => patchSkill(def.id, cycle(s))} />
               <span className="text-xs text-fade font-cmd w-8 uppercase">{def.ability}</span>
               <span className="text-sm text-parchment flex-1 truncate">{def.name}</span>
               <input className="lined w-14 text-right font-cmd" placeholder="+0"
@@ -187,6 +195,28 @@ function Skills({ character, patchSkill }) {
         })}
       </div>
     </SectionCard>
+  );
+}
+
+function ProfTriState({ skill, onCycle }) {
+  const filled = skill.prof || skill.expertise;
+  const symbol = skill.expertise ? '★' : skill.prof ? '✓' : '';
+  const title = skill.expertise
+    ? 'expertise (click to clear)'
+    : skill.prof
+      ? 'proficient (click for expertise)'
+      : 'untrained (click for proficient)';
+  return (
+    <button
+      onClick={(e) => { e.preventDefault(); onCycle(); }}
+      title={title}
+      className={`w-3.5 h-3.5 border rounded-sm flex items-center justify-center text-xs flex-shrink-0 transition ${
+        filled ? 'border-gold-strong' : 'border-gold'
+      }`}
+      style={filled ? { backgroundColor: '#d4a644', color: '#14100c' } : {}}
+    >
+      {symbol}
+    </button>
   );
 }
 

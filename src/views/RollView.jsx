@@ -13,6 +13,8 @@ export default function RollView({
   custom, setCustom, castLevel, setCastLevel,
   composed, setComposed, history, setHistory, copied, setCopied, channel,
 }) {
+  const [spellLevel, setSpellLevel] = useState(null);
+
   const toggleMod = useCallback((modId) => {
     setActiveMods(prev => {
       const next = { ...prev };
@@ -60,6 +62,15 @@ export default function RollView({
     Object.entries(activeMods).filter(([id]) => modifiers.find(m => m.id === id))
   );
 
+  // Avrae's !cast handles spell attacks — so any "attack" whose id matches
+  // a spell is redundant in the Attacks tab. Filter at render time so the
+  // underlying character data stays intact.
+  const spellIds = new Set();
+  for (const lvl of SLOT_LEVELS) {
+    for (const s of (character.spells?.[lvl] || [])) spellIds.add(s.id);
+  }
+  const visibleAttacks = character.attacks.filter(a => !spellIds.has(a.id));
+
   const tabs = [
     { id: 'attacks', label: 'Attacks' },
     { id: 'spells',  label: 'Spells'  },
@@ -78,11 +89,15 @@ export default function RollView({
           <TabBar tabs={tabs} current={tab} onChange={setTab} />
 
           {tab === 'attacks' && (
-            character.attacks.length === 0 ? (
-              <EmptyState text="no attacks defined — open the Character tab to add some" />
+            visibleAttacks.length === 0 ? (
+              <EmptyState text={
+                character.attacks.length === 0
+                  ? 'no attacks defined — open the Character tab to add some'
+                  : 'all attacks are spells — see the Spells tab'
+              } />
             ) : (
               <div className="grid grid-cols-2 gap-3">
-                {character.attacks.map(a => (
+                {visibleAttacks.map(a => (
                   <ActionCard key={a.id} title={a.name} sub={a.sub}
                     onClick={() => fire({ kind: 'attack', id: a.id, label: a.name, phrase: a.phrase })} />
                 ))}
@@ -94,30 +109,13 @@ export default function RollView({
             populatedSpellLevels.length === 0 ? (
               <EmptyState text="no spells prepared — open the Character tab to add some" />
             ) : (
-              <div className="space-y-5">
-                {populatedSpellLevels.map(level => (
-                  <div key={level}>
-                    <SpellLevelHeader
-                      level={level}
-                      slots={character.spellSlots?.[level]}
-                      castLevel={castLevel[level] || level}
-                      onCastLevelChange={(v) => setCastLevel(p => ({ ...p, [level]: v }))} />
-                    <div className="grid grid-cols-2 gap-3">
-                      {character.spells[level].map(s => (
-                        <ActionCard key={s.id} title={s.name} sub={s.sub}
-                          right={(castLevel[level] || level) > level
-                            ? <span className="text-gold font-cmd text-xs">L{castLevel[level]}</span>
-                            : null}
-                          onClick={() => fire({
-                            kind: 'spell', id: s.id, label: s.name,
-                            level, upcastTo: castLevel[level] || level,
-                            phrase: s.phrase,
-                          })} />
-                      ))}
-                    </div>
-                  </div>
-                ))}
-              </div>
+              <SpellsPage
+                character={character}
+                populatedSpellLevels={populatedSpellLevels}
+                spellLevel={spellLevel} setSpellLevel={setSpellLevel}
+                castLevel={castLevel} setCastLevel={setCastLevel}
+                fire={fire}
+              />
             )
           )}
 
@@ -138,10 +136,11 @@ export default function RollView({
           {tab === 'skills' && (
             <div className="grid grid-cols-2 gap-3">
               {SKILL_DEFS.map(def => {
-                const s = character.skills[def.id] || { mod: '', prof: false };
+                const s = character.skills[def.id] || { mod: '', prof: false, expertise: false };
+                const tag = s.expertise ? ' · expertise' : s.prof ? ' · proficient' : '';
                 return (
                   <ActionCard key={def.id} title={def.name}
-                    sub={`${def.ability.toUpperCase()}${s.prof ? ' · proficient' : ''}`}
+                    sub={`${def.ability.toUpperCase()}${tag}`}
                     right={<span className="font-cmd text-gold">{s.mod || '—'}</span>}
                     onClick={() => fire({ kind: 'check', id: def.id, label: def.name })} />
                 );
@@ -242,6 +241,88 @@ export default function RollView({
         </div>
       </div>
     </>
+  );
+}
+
+function SpellsPage({ character, populatedSpellLevels, spellLevel, setSpellLevel, castLevel, setCastLevel, fire }) {
+  // Resolve the level to display: use the user's selection if it's still
+  // populated, otherwise fall back to the first populated level. We don't
+  // need useEffect — derived values respond to data changes naturally.
+  const activeLevel = (spellLevel != null && populatedSpellLevels.includes(spellLevel))
+    ? spellLevel
+    : populatedSpellLevels[0];
+
+  const idx = populatedSpellLevels.indexOf(activeLevel);
+  const canPrev = idx > 0;
+  const canNext = idx >= 0 && idx < populatedSpellLevels.length - 1;
+  const goPrev = () => canPrev && setSpellLevel(populatedSpellLevels[idx - 1]);
+  const goNext = () => canNext && setSpellLevel(populatedSpellLevels[idx + 1]);
+
+  const upcastTo = castLevel[activeLevel] || activeLevel;
+  const upcasting = activeLevel > 0 && upcastTo > activeLevel;
+
+  return (
+    <div>
+      <SpellLevelNav
+        levels={populatedSpellLevels}
+        current={activeLevel}
+        onChange={setSpellLevel}
+        onPrev={goPrev} onNext={goNext}
+        canPrev={canPrev} canNext={canNext}
+      />
+      <SpellLevelHeader
+        level={activeLevel}
+        slots={character.spellSlots?.[activeLevel]}
+        castLevel={upcastTo}
+        onCastLevelChange={(v) => setCastLevel(p => ({ ...p, [activeLevel]: v }))}
+      />
+      <div className="grid grid-cols-2 gap-3">
+        {character.spells[activeLevel].map(s => (
+          <ActionCard key={s.id} title={s.name} sub={s.sub}
+            right={upcasting
+              ? <span className="text-gold font-cmd text-xs">L{upcastTo}</span>
+              : null}
+            onClick={() => fire({
+              kind: 'spell', id: s.id, label: s.name,
+              level: activeLevel, upcastTo,
+              phrase: s.phrase,
+            })} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function SpellLevelNav({ levels, current, onChange, onPrev, onNext, canPrev, canNext }) {
+  const labelFor = (lvl) => lvl === 0 ? 'Cantrips' : `L${lvl}`;
+  return (
+    <div className="flex items-center gap-2 mb-4 border-b border-gold pb-2">
+      <button onClick={onPrev} disabled={!canPrev}
+              className="text-gold disabled:opacity-30 hover:text-parchment text-lg font-cmd px-2 transition"
+              title="previous level">
+        ←
+      </button>
+      <div className="flex gap-1 flex-wrap justify-center flex-1">
+        {levels.map(lvl => {
+          const active = current === lvl;
+          return (
+            <button key={lvl} onClick={() => onChange(lvl)}
+              className={`px-3 py-1 font-display text-xs uppercase tracking-wider transition border rounded-sm ${
+                active
+                  ? 'bg-active text-gold border-gold-strong glow-active'
+                  : 'bg-card text-fade border-gold hover:text-parchment hover:bg-card-hover'
+              }`}>
+              {labelFor(lvl)}
+            </button>
+          );
+        })}
+      </div>
+      <button onClick={onNext} disabled={!canNext}
+              className="text-gold disabled:opacity-30 hover:text-parchment text-lg font-cmd px-2 transition"
+              title="next level">
+        →
+      </button>
+    </div>
   );
 }
 
