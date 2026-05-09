@@ -11,7 +11,7 @@ export default function RollView({
   tab, setTab,
   activeMods, setActiveMods, modParams, setModParams,
   custom, setCustom, castLevel, setCastLevel,
-  composed, setComposed, history, setHistory, copied, setCopied, channel,
+  composed, setComposed, history, setHistory, copied, setCopied,
 }) {
   const [spellLevel, setSpellLevel] = useState(null);
 
@@ -207,21 +207,12 @@ export default function RollView({
               {composed || 'click an action to compose a command…'}
             </code>
             {composed && (
-              <>
-                <button
-                  onClick={() => { navigator.clipboard?.writeText(composed); setCopied(true); setTimeout(() => setCopied(false), 1500); }}
-                  className="text-xs font-cmd uppercase tracking-wider text-gold border border-gold px-3 py-1.5 hover:bg-active transition"
-                >
-                  {copied ? '✓ copied' : '📋 copy'}
-                </button>
-                <button
-                  onClick={() => alert(`Phase 2: would relay to ${channel} via browser extension.\n\nFor now, the command is on your clipboard — paste into Discord.`)}
-                  className="text-xs font-cmd uppercase tracking-wider text-parchment bg-active border border-gold px-3 py-1.5 hover:bg-card-hover transition"
-                  title="Phase 2: browser-extension relay"
-                >
-                  ↗ send to {channel}
-                </button>
-              </>
+              <button
+                onClick={() => { navigator.clipboard?.writeText(composed); setCopied(true); setTimeout(() => setCopied(false), 1500); }}
+                className="text-xs font-cmd uppercase tracking-wider text-gold border border-gold px-3 py-1.5 hover:bg-active transition"
+              >
+                {copied ? '✓ copied' : '📋 copy'}
+              </button>
             )}
           </div>
 

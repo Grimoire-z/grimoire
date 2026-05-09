@@ -58,7 +58,7 @@ This file is the source of truth for project memory. It's committed to the repo 
 ### Theming (v0.4+)
 
 - All colors and font families flow through CSS variables defined in `src/index.css`. Default values live on `:root`. Each named theme/font preset has a `[data-theme="..."]` / `[data-font-preset="..."]` block that overrides those vars.
-- The d20 button in the header (right of the channel input in `App.jsx`'s `Header`) is a navigation control — clicking it sets `mode = 'settings'`, rendering `SettingsView` as a full page (same pattern as Roll / Character / Targets / Modifiers). The 'settings' mode is intentionally NOT in the `MODES` nav array; the d20 is its only entry point so the main nav stays at four items. Going back to any other mode is just clicking that mode's nav button.
+- The d20 button at the top-right of `App.jsx`'s `Header` is a navigation control — clicking it sets `mode = 'settings'`, rendering `SettingsView` as a full page (same pattern as Roll / Character / Targets / Modifiers). The 'settings' mode is intentionally NOT in the `MODES` nav array; the d20 is its only entry point so the main nav stays at four items. Going back to any other mode is just clicking that mode's nav button.
 - The popover pattern was tried first (v0.4 initial commit) and abandoned because the App's root `overflow-hidden` clipped it and z-stacking against the header was fragile. A separate page sidesteps both issues and gives room for future settings sections.
 - An effect in `App.jsx` mirrors `settings.theme` / `settings.fontPreset` to `document.documentElement.dataset` so the var swap reaches every node.
 - Theme/font preset metadata (id, label, swatch colors, sample font-families) lives in `src/themes.js`. Adding a new theme = (1) add a `[data-theme="..."]` block in `index.css`, (2) register an entry in `THEMES` in `themes.js`. Same pattern for fonts via `FONT_PRESETS`.
@@ -96,7 +96,6 @@ The Character view's PDF import section has a diagnostics panel with field/widge
 
 ## Open work / known stubs
 
-- "Send to channel" button is still an `alert()` — Phase 2 browser-extension relay not built yet
 - DDB JSON import (paste/file) fills only header fields + ability scores; doesn't pull weapons/spells from inventory or spell sources
 - Single-character only (no vault/picker)
 - Auto-derived save/skill mods from ability scores not implemented (manual entry only)

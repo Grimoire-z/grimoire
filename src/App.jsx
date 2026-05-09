@@ -23,7 +23,6 @@ export default function App() {
   const [modifiers, setModifiers] = useState(initial.modifiers || DEFAULT_MODIFIERS);
   const [targets,   setTargets]   = useState(initial.targets || []);
   const [folders,   setFolders]   = useState(initial.folders || []);
-  const [channel,   setChannel]   = useState(initial.channel || '#party-roll');
   const [settings,  setSettings]  = useState({ ...DEFAULT_SETTINGS, ...(initial.settings || {}) });
 
   // Ephemeral roll-view state — not persisted.
@@ -39,8 +38,8 @@ export default function App() {
 
   // Persist whenever the durable bits change.
   useEffect(() => {
-    saveState({ character, modifiers, targets, folders, channel, settings });
-  }, [character, modifiers, targets, folders, channel, settings]);
+    saveState({ character, modifiers, targets, folders, settings });
+  }, [character, modifiers, targets, folders, settings]);
 
   // Apply theme + font preset to <html> so CSS-var swaps reach every node.
   useEffect(() => {
@@ -54,7 +53,6 @@ export default function App() {
       <Header
         mode={mode} setMode={setMode}
         character={character}
-        channel={channel} setChannel={setChannel}
       />
       {mode === 'roll' && (
         <RollView
@@ -70,7 +68,6 @@ export default function App() {
           composed={composed} setComposed={setComposed}
           history={history} setHistory={setHistory}
           copied={copied} setCopied={setCopied}
-          channel={channel}
         />
       )}
       {mode === 'character' && (
@@ -95,7 +92,7 @@ export default function App() {
   );
 }
 
-function Header({ mode, setMode, character, channel, setChannel }) {
+function Header({ mode, setMode, character }) {
   const subhead =
     mode === 'character' ? 'authoring · changes save automatically' :
     mode === 'targets'   ? 'organize encounter targets into folders' :
@@ -120,25 +117,20 @@ function Header({ mode, setMode, character, channel, setChannel }) {
             </button>
           ))}
         </nav>
-        <div className="flex items-center gap-2 text-xs text-fade font-cmd">
-          <span>channel:</span>
-          <input className="lined w-32 text-right" value={channel}
-                 onChange={e => setChannel(e.target.value)} />
-          <button
-            type="button"
-            onClick={() => setMode('settings')}
-            title="Settings"
-            aria-label="Settings"
-            aria-pressed={mode === 'settings'}
-            className={`flex items-center justify-center w-8 h-8 border rounded-sm transition ${
-              mode === 'settings'
-                ? 'text-gold border-gold-strong bg-active'
-                : 'text-fade border-gold hover:text-parchment hover:bg-active'
-            }`}
-          >
-            <D20Icon size={18} />
-          </button>
-        </div>
+        <button
+          type="button"
+          onClick={() => setMode('settings')}
+          title="Settings"
+          aria-label="Settings"
+          aria-pressed={mode === 'settings'}
+          className={`flex items-center justify-center w-8 h-8 border rounded-sm transition ${
+            mode === 'settings'
+              ? 'text-gold border-gold-strong bg-active'
+              : 'text-fade border-gold hover:text-parchment hover:bg-active'
+          }`}
+        >
+          <D20Icon size={18} />
+        </button>
       </div>
       <div className="divider mb-3" />
       {mode === 'roll' ? (
