@@ -96,6 +96,8 @@ The Character view's PDF import section has a diagnostics panel with field/widge
 
 ## Open work / known stubs
 
+- No custom application icon — electron-builder uses the default Electron icon. Drop a `build/icon.ico` (256×256, multi-resolution) to fix.
+- Releases are unsigned (placeholder signtool only); first-run SmartScreen prompt is expected. Real signing would need an EV / OV code-signing cert.
 - DDB JSON import (paste/file) fills only header fields + ability scores; doesn't pull weapons/spells from inventory or spell sources
 - Single-character only (no vault/picker)
 - Auto-derived save/skill mods from ability scores not implemented (manual entry only)
@@ -116,6 +118,27 @@ The Character view's PDF import section has a diagnostics panel with field/widge
 - Prereqs: Node ≥22.13 (Node 24 LTS recommended — ESLint 10 / Vite 8 / pdfjs-dist 5.7 EBADENGINE warn below that), git, gh — all installable via `winget`
 - Workflow across machines: ask for a commit + push when context-switching; `git pull` on the other side picks up everything including this CLAUDE.md
 - localStorage character/modifier/target data does NOT sync across devices — that's a separate feature still on the TODO list
+
+## Releases
+
+For "I just want to use the app on this device" rather than dev: download the latest release from https://github.com/Grimoire-z/grimoire/releases. Repo is private, so clicking through requires being signed in to a GitHub account on `Grimoire-z`'s team.
+
+Two artifacts per release:
+- `Grimoire Setup <version>.exe` — NSIS installer; lets you choose install dir, creates Start-menu shortcut, listed in Add/Remove Programs.
+- `Grimoire <version>.exe` — portable single-file; runs anywhere with no install.
+
+Both are x64 only (no 32-bit / arm64 build target), unsigned (signed with placeholder signtool only — Windows SmartScreen will warn on first run, click "More info" → "Run anyway").
+
+### Cutting a new release
+
+1. Bump `version` in `package.json` (semver: minor for new features, patch for fixes).
+2. Update CLAUDE.md per the working agreement (open work list, architecture changes, etc.).
+3. Commit + push.
+4. `npm run dist` from the project root. Output lands in `release/` (which is gitignored). Takes ~30s on a warm machine, longer on first run while `electron-builder` downloads winCodeSign + nsis archives. Default Electron icon is used unless `build/icon.ico` exists.
+5. `git tag v<version>` then `git push origin v<version>`.
+6. `gh release create v<version> "release/Grimoire Setup <version>.exe" "release/Grimoire <version>.exe" --title "v<version>" --notes "..."` to publish on the Releases page with the two exes attached.
+
+`npm run dist:dir` skips the installer/portable packaging and just produces `release/win-unpacked/Grimoire.exe` for quick smoke-testing — useful when iterating on packaging config without paying the NSIS build cost.
 
 ## Working agreement (Claude)
 
