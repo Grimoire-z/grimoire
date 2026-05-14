@@ -520,11 +520,15 @@ async function mapSpells(pdf, fields) {
     const dur   = readField(fields, `spellDuration${i}`);
     const subParts = [time, range, dur, comps].filter(Boolean).map(s => String(s).trim());
 
-    // DDB encodes prepared status in spellPreparedN: 'O' = prepared/known,
-    // 'P' = always prepared (class feature etc.). Anything non-empty
-    // counts as prepared for filter purposes.
+    // DDB encodes spell list status in spellPreparedN:
+    //   'P' = always prepared (granted by class feature, racial trait, etc.)
+    //   'O' = known / in spellbook but not necessarily prepared today
+    // We only flag the always-prepared ones on import. Daily preparation
+    // is a runtime decision the user toggles via the Character editor —
+    // anchoring it to 'P' avoids re-marking everything every time the
+    // spellbook is re-imported.
     const prep = readField(fields, `spellPrepared${i}`);
-    const prepared = prep != null && String(prep).trim() !== '';
+    const prepared = prep != null && String(prep).trim().toUpperCase() === 'P';
 
     spellsByLevel[level].push({
       id,

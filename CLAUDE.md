@@ -86,7 +86,7 @@ DDB's fillable PDF (the WOTC-template form) uses these conventions, learned from
 - Weapons: first weapon at `Wpn Name` (no number), rest at `Wpn Name 2..6`; bonus/damage at `Wpn1 AtkBonus` / `Wpn1 Damage` for all 6
 - Spells: indexed `spellName0..N`, partitioned by level via `spellHeader0..N` walked in document annotation order (page → y descending)
 - Slot counts: `spellSlotHeader<L>` text like "4 Slots OOOO"
-- Prepared status: `spellPrepared<N>` — any non-empty value (`O` = prepared/known, `P` = always prepared) maps to `prepared: true`
+- Prepared status: `spellPrepared<N>` — **only `P` (always prepared, from class feature / racial trait) maps to `prepared: true`**. `O` (known / in spellbook) and empty both map to `prepared: false`. Daily preparation is treated as a runtime decision the user toggles in the Character editor, so re-importing doesn't trample manual selections.
 
 Some DDB field names have trailing whitespace (`DEXmod `, `Stealth `); `readField` normalizes via `replace(/\s+/g, ' ').trim()`.
 
