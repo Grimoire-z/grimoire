@@ -527,8 +527,13 @@ async function mapSpells(pdf, fields) {
     // is a runtime decision the user toggles via the Character editor —
     // anchoring it to 'P' avoids re-marking everything every time the
     // spellbook is re-imported.
+    // Cantrips (level 0) are at-will in 5e — they don't get prepared or
+    // unprepared. Force them on at import time so they pass the
+    // "Prepared only" filter by default. The user can still toggle a
+    // cantrip off in the Character editor to hide it from the filter.
     const prep = readField(fields, `spellPrepared${i}`);
-    const prepared = prep != null && String(prep).trim().toUpperCase() === 'P';
+    const prepared = level === 0
+      || (prep != null && String(prep).trim().toUpperCase() === 'P');
 
     spellsByLevel[level].push({
       id,
