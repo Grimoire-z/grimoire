@@ -153,13 +153,15 @@ function UpdatesSection() {
           <ProgressIndicator received={progress.received} total={progress.total} />
         )}
 
-        <button
-          onClick={openReleases}
-          className="text-xs font-cmd text-fade hover:text-parchment transition ml-auto"
-          title="Open the GitHub releases page in your browser"
-        >
-          ↗ open releases page
-        </button>
+        {phase === 'error' && (
+          <button
+            onClick={openReleases}
+            className="text-xs font-cmd text-fade hover:text-parchment transition ml-auto"
+            title="Open the GitHub releases page in your browser"
+          >
+            ↗ open releases page
+          </button>
+        )}
       </div>
 
       {result && phase === 'idle' && (
