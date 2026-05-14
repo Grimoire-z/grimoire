@@ -8,6 +8,7 @@ const SLOT_LEVELS = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9];
 export default function RollView({
   character, modifiers,
   targets, folders, selectedTargets, setSelectedTargets,
+  settings, setSettings,
   tab, setTab,
   activeMods, setActiveMods, modParams, setModParams,
   custom, setCustom, castLevel, setCastLevel,
@@ -78,9 +79,20 @@ export default function RollView({
     { id: 'skills',  label: 'Skills'  },
   ];
 
-  // Spell levels with at least one prepared/known spell, in order.
-  const populatedSpellLevels = SLOT_LEVELS
-    .filter(lvl => (character.spells?.[lvl] || []).length > 0);
+  // Apply the prepared-only filter (settings.preparedOnly) once here, so
+  // both the level pagination and the spell grid stay in sync. If the
+  // filter strands the user on an empty level, SpellsPage falls back to
+  // the first populated one.
+  const preparedOnly = !!settings?.preparedOnly;
+  const spellsByLevel = {};
+  for (const lvl of SLOT_LEVELS) {
+    const list = character.spells?.[lvl] || [];
+    spellsByLevel[lvl] = preparedOnly ? list.filter(s => s.prepared) : list;
+  }
+  const populatedSpellLevels = SLOT_LEVELS.filter(lvl => spellsByLevel[lvl].length > 0);
+
+  const togglePreparedOnly = () =>
+    setSettings(s => ({ ...s, preparedOnly: !s.preparedOnly }));
 
   return (
     <>
@@ -107,14 +119,21 @@ export default function RollView({
 
           {tab === 'spells' && (
             populatedSpellLevels.length === 0 ? (
-              <EmptyState text="no spells prepared — open the Character tab to add some" />
+              <EmptyState text={
+                preparedOnly
+                  ? 'no spells are marked prepared — toggle the filter off, or mark some prepared in the Character tab'
+                  : 'no spells in this character — open the Character tab to add some'
+              } />
             ) : (
               <SpellsPage
                 character={character}
+                spellsByLevel={spellsByLevel}
                 populatedSpellLevels={populatedSpellLevels}
                 spellLevel={spellLevel} setSpellLevel={setSpellLevel}
                 castLevel={castLevel} setCastLevel={setCastLevel}
                 fire={fire}
+                preparedOnly={preparedOnly}
+                onTogglePreparedOnly={togglePreparedOnly}
               />
             )
           )}
@@ -235,7 +254,7 @@ export default function RollView({
   );
 }
 
-function SpellsPage({ character, populatedSpellLevels, spellLevel, setSpellLevel, castLevel, setCastLevel, fire }) {
+function SpellsPage({ character, spellsByLevel, populatedSpellLevels, spellLevel, setSpellLevel, castLevel, setCastLevel, fire, preparedOnly, onTogglePreparedOnly }) {
   // Resolve the level to display: use the user's selection if it's still
   // populated, otherwise fall back to the first populated level. We don't
   // need useEffect — derived values respond to data changes naturally.
@@ -251,9 +270,13 @@ function SpellsPage({ character, populatedSpellLevels, spellLevel, setSpellLevel
 
   const upcastTo = castLevel[activeLevel] || activeLevel;
   const upcasting = activeLevel > 0 && upcastTo > activeLevel;
+  const activeSpells = spellsByLevel[activeLevel] || [];
 
   return (
     <div>
+      <div className="flex justify-end mb-1">
+        <PreparedOnlyToggle preparedOnly={preparedOnly} onToggle={onTogglePreparedOnly} />
+      </div>
       <SpellLevelNav
         levels={populatedSpellLevels}
         current={activeLevel}
@@ -268,7 +291,7 @@ function SpellsPage({ character, populatedSpellLevels, spellLevel, setSpellLevel
         onCastLevelChange={(v) => setCastLevel(p => ({ ...p, [activeLevel]: v }))}
       />
       <div className="grid grid-cols-2 gap-3">
-        {character.spells[activeLevel].map(s => (
+        {activeSpells.map(s => (
           <ActionCard key={s.id} title={s.name} sub={s.sub}
             right={upcasting
               ? <span className="text-gold font-cmd text-xs">L{upcastTo}</span>
@@ -281,6 +304,32 @@ function SpellsPage({ character, populatedSpellLevels, spellLevel, setSpellLevel
         ))}
       </div>
     </div>
+  );
+}
+
+function PreparedOnlyToggle({ preparedOnly, onToggle }) {
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      title={preparedOnly ? 'showing prepared spells only — click to show all' : 'showing all spells — click to filter to prepared only'}
+      aria-pressed={preparedOnly}
+      className={`inline-flex items-center gap-2 px-2 py-1 border rounded-sm text-[11px] font-cmd uppercase tracking-wider transition ${
+        preparedOnly
+          ? 'border-gold-strong text-gold bg-active'
+          : 'border-gold text-fade hover:text-parchment hover:bg-card-hover'
+      }`}
+    >
+      <span
+        className={`w-3.5 h-3.5 border rounded-sm inline-flex items-center justify-center text-[10px] ${
+          preparedOnly ? 'border-gold-strong' : 'border-gold'
+        }`}
+        style={preparedOnly ? { backgroundColor: 'var(--color-gold)', color: 'var(--color-bg)' } : {}}
+      >
+        {preparedOnly && '✓'}
+      </span>
+      Prepared only
+    </button>
   );
 }
 

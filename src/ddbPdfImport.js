@@ -520,10 +520,17 @@ async function mapSpells(pdf, fields) {
     const dur   = readField(fields, `spellDuration${i}`);
     const subParts = [time, range, dur, comps].filter(Boolean).map(s => String(s).trim());
 
+    // DDB encodes prepared status in spellPreparedN: 'O' = prepared/known,
+    // 'P' = always prepared (class feature etc.). Anything non-empty
+    // counts as prepared for filter purposes.
+    const prep = readField(fields, `spellPrepared${i}`);
+    const prepared = prep != null && String(prep).trim() !== '';
+
     spellsByLevel[level].push({
       id,
       name: display,
       sub: subParts.join(' · '),
+      prepared,
     });
   }
 

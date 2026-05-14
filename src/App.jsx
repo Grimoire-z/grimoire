@@ -60,6 +60,7 @@ export default function App() {
           modifiers={modifiers}
           targets={targets} folders={folders}
           selectedTargets={selectedTargets} setSelectedTargets={setSelectedTargets}
+          settings={settings} setSettings={setSettings}
           tab={tab} setTab={setTab}
           activeMods={activeMods} setActiveMods={setActiveMods}
           modParams={modParams} setModParams={setModParams}

@@ -198,6 +198,25 @@ function Skills({ character, patchSkill }) {
   );
 }
 
+// Small chip-shaped toggle for the per-spell "prepared" flag. Filled gold
+// when prepared; outlined when not. Mirrors the visual vocabulary of the
+// prof checkboxes but uses a "Prep" label so it isn't visually confused
+// with the prof ✓ / expertise ★ symbols.
+function PreparedToggle({ prepared, onToggle }) {
+  return (
+    <button
+      onClick={(e) => { e.preventDefault(); onToggle(); }}
+      title={prepared ? 'prepared — click to unprepare' : 'not prepared — click to prepare'}
+      className={`col-span-1 inline-flex items-center justify-center h-5 px-1.5 border rounded-sm font-cmd text-[10px] font-bold uppercase tracking-wider transition ${
+        prepared ? 'border-gold-strong' : 'border-gold text-fade hover:text-parchment'
+      }`}
+      style={prepared ? { backgroundColor: 'var(--color-gold)', color: 'var(--color-bg)' } : {}}
+    >
+      Prep
+    </button>
+  );
+}
+
 function ProfTriState({ skill, onCycle }) {
   const filled = skill.prof || skill.expertise;
   const symbol = skill.expertise ? '★' : skill.prof ? '✓' : '';
@@ -294,11 +313,17 @@ function Spells({ character, setCharacter, patchSlot }) {
         {SLOT_LEVELS.map(level => {
           const spells = character.spells[level] || [];
           const slots  = character.spellSlots?.[level] || { current: 0, max: 0 };
+          const preparedCount = spells.filter(s => s.prepared).length;
           return (
             <div key={level}>
               <div className="flex items-center justify-between mb-1.5">
                 <h4 className="font-display text-sm text-gold uppercase">
                   {level === 0 ? 'Cantrips' : `Level ${level}`}
+                  {spells.length > 0 && (
+                    <span className="text-fade font-cmd text-xs normal-case ml-2">
+                      · {preparedCount}/{spells.length} prepared
+                    </span>
+                  )}
                 </h4>
                 <div className="flex items-center gap-2 text-xs text-fade">
                   {level === 0 ? (
@@ -332,9 +357,13 @@ function Spells({ character, setCharacter, patchSlot }) {
                         <input className="lined col-span-3" placeholder="display name"
                                value={s.name}
                                onChange={e => updateSpell(level, i, { name: e.target.value })} />
-                        <input className="lined col-span-4" placeholder="subtitle"
+                        <input className="lined col-span-3" placeholder="subtitle"
                                value={s.sub}
                                onChange={e => updateSpell(level, i, { sub: e.target.value })} />
+                        <PreparedToggle
+                          prepared={!!s.prepared}
+                          onToggle={() => updateSpell(level, i, { prepared: !s.prepared })}
+                        />
                         <button onClick={() => removeSpell(level, i)}
                                 className="text-fade hover:text-crimson text-sm col-span-1">✕</button>
                       </div>

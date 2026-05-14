@@ -8,6 +8,7 @@ export const SCHEMA_VERSION = 1;
 export const DEFAULT_SETTINGS = {
   theme: DEFAULT_THEME_ID,
   fontPreset: DEFAULT_FONT_PRESET_ID,
+  preparedOnly: false,
 };
 
 const STORAGE_KEY = 'grimoire.state.v1';
@@ -68,20 +69,20 @@ export const DEFAULT_CHARACTER = {
   ],
   spells: {
     0: [
-      { id: 'sacred flame', name: 'Sacred Flame', sub: 'DEX save · 1d8 radiant' },
-      { id: 'thaumaturgy',  name: 'Thaumaturgy',  sub: 'minor magic effect · 1 min' },
+      { id: 'sacred flame', name: 'Sacred Flame', sub: 'DEX save · 1d8 radiant',         prepared: true },
+      { id: 'thaumaturgy',  name: 'Thaumaturgy',  sub: 'minor magic effect · 1 min',     prepared: true },
     ],
     1: [
-      { id: 'cure wounds',     name: 'Cure Wounds',     sub: 'touch · 1d8+CHA hp' },
-      { id: 'bless',           name: 'Bless',           sub: '3 targets · +1d4 atk/save' },
-      { id: 'shield of faith', name: 'Shield of Faith', sub: '+2 AC · 10 min · conc' },
-      { id: 'compelled duel',  name: 'Compelled Duel',  sub: 'WIS save · conc' },
+      { id: 'cure wounds',     name: 'Cure Wounds',     sub: 'touch · 1d8+CHA hp',        prepared: true },
+      { id: 'bless',           name: 'Bless',           sub: '3 targets · +1d4 atk/save', prepared: true },
+      { id: 'shield of faith', name: 'Shield of Faith', sub: '+2 AC · 10 min · conc',     prepared: false },
+      { id: 'compelled duel',  name: 'Compelled Duel',  sub: 'WIS save · conc',           prepared: false },
     ],
     2: [
-      { id: 'lesser restoration', name: 'Lesser Restoration', sub: 'cure 1 condition' },
-      { id: 'branding smite',     name: 'Branding Smite',     sub: '+2d6 radiant · conc' },
-      { id: 'aid',                name: 'Aid',                sub: '+5 max & current HP · 8h' },
-      { id: 'misty step',         name: 'Misty Step',         sub: '30 ft teleport · bonus' },
+      { id: 'lesser restoration', name: 'Lesser Restoration', sub: 'cure 1 condition',     prepared: false },
+      { id: 'branding smite',     name: 'Branding Smite',     sub: '+2d6 radiant · conc',  prepared: true },
+      { id: 'aid',                name: 'Aid',                sub: '+5 max & current HP · 8h', prepared: false },
+      { id: 'misty step',         name: 'Misty Step',         sub: '30 ft teleport · bonus', prepared: true },
     ],
     3: [], 4: [], 5: [], 6: [], 7: [], 8: [], 9: [],
   },

@@ -48,6 +48,7 @@ This file is the source of truth for project memory. It's committed to the repo 
 - Spells: levels 0–9 (cantrips at level 0, no slot tracking). Per-level `{current, max}` slot tracking on levels 1–9.
 - Attacks: free-form repeating list.
 - Each attack/spell has `id` (Avrae's name for `!attack "<id>"` / `!cast "<id>"`) separate from display `name`. Also has optional `phrase` for per-action flavor text.
+- Spells additionally carry an optional `prepared` bool. The Roll view's Spells tab has a "Prepared only" filter (persisted as `settings.preparedOnly`) which, when on, hides unprepared spells from both the level pagination and the spell grid. Character editor exposes a per-spell "Prep" chip and a `N/M prepared` count in each level header. Cantrips can be marked too — useful for "always show on my casting page" semantics even though 5e cantrips aren't technically "prepared".
 
 ### Composer
 
@@ -85,6 +86,7 @@ DDB's fillable PDF (the WOTC-template form) uses these conventions, learned from
 - Weapons: first weapon at `Wpn Name` (no number), rest at `Wpn Name 2..6`; bonus/damage at `Wpn1 AtkBonus` / `Wpn1 Damage` for all 6
 - Spells: indexed `spellName0..N`, partitioned by level via `spellHeader0..N` walked in document annotation order (page → y descending)
 - Slot counts: `spellSlotHeader<L>` text like "4 Slots OOOO"
+- Prepared status: `spellPrepared<N>` — any non-empty value (`O` = prepared/known, `P` = always prepared) maps to `prepared: true`
 
 Some DDB field names have trailing whitespace (`DEXmod `, `Stealth `); `readField` normalizes via `replace(/\s+/g, ' ').trim()`.
 
