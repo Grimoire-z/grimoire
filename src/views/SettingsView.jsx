@@ -1,9 +1,12 @@
+import { useEffect, useState } from 'react';
 import { THEMES, FONT_PRESETS } from '../themes.js';
 import { SectionCard } from '../components.jsx';
 
 export default function SettingsView({ settings, setSettings }) {
   return (
     <main className="px-6 pb-12 max-w-5xl mx-auto relative z-10 flex flex-col gap-4">
+      <UpdatesSection />
+
       <SectionCard title="Theme">
         <p className="text-fade text-sm italic mb-4">
           Color palette. Each theme shifts the primary accent and danger hues while preserving role semantics.
@@ -34,6 +37,169 @@ export default function SettingsView({ settings, setSettings }) {
         </div>
       </SectionCard>
     </main>
+  );
+}
+
+// ─── Updates ─────────────────────────────────────────────────────────────
+// Pulls the latest GitHub release via the user's locally-installed gh CLI
+// (no token shipped in the binary). Shows current vs. latest, downloads
+// the Setup installer on demand, then opens it so Windows runs the
+// installer over the existing install.
+
+function formatBytes(n) {
+  if (!n) return '—';
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+  return `${(n / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+const RELEASES_URL = 'https://github.com/Grimoire-z/grimoire/releases';
+const bridge = typeof window !== 'undefined' ? window.grimoire : null;
+
+function UpdatesSection() {
+  const [current,  setCurrent]  = useState(null);
+  const [result,   setResult]   = useState(null);  // result of check-for-update
+  const [checking, setChecking] = useState(false);
+  const [progress, setProgress] = useState(null);  // {received, total} during download
+  const [phase,    setPhase]    = useState('idle'); // idle | checking | downloading | launched | error
+  const [error,    setError]    = useState(null);
+
+  // Load current version on mount.
+  useEffect(() => {
+    if (!bridge?.getVersion) return;
+    bridge.getVersion().then(setCurrent).catch(() => {});
+  }, []);
+
+  // Subscribe to download progress events.
+  useEffect(() => {
+    if (!bridge?.onDownloadProgress) return undefined;
+    return bridge.onDownloadProgress((data) => setProgress(data));
+  }, []);
+
+  const check = async () => {
+    if (!bridge?.checkForUpdate) { setError('Updates require the desktop app build.'); return; }
+    setChecking(true); setError(null); setResult(null); setPhase('checking');
+    const r = await bridge.checkForUpdate();
+    setChecking(false);
+    if (r.ok) {
+      setResult(r);
+      setPhase('idle');
+      if (!current && r.current) setCurrent(r.current);
+    } else {
+      setError(r.error || 'check failed');
+      setPhase('error');
+    }
+  };
+
+  const install = async () => {
+    if (!result?.asset) return;
+    setPhase('downloading'); setProgress(null); setError(null);
+    const r = await bridge.downloadAndInstall(result.asset);
+    if (r.ok) {
+      setPhase('launched');
+    } else {
+      setError(r.error || 'install failed');
+      setPhase('error');
+    }
+  };
+
+  const openReleases = () =>
+    bridge?.openExternal ? bridge.openExternal(RELEASES_URL) : window.open(RELEASES_URL, '_blank');
+
+  const openReleaseNotes = () =>
+    result?.releaseUrl && (bridge?.openExternal ? bridge.openExternal(result.releaseUrl) : window.open(result.releaseUrl, '_blank'));
+
+  return (
+    <SectionCard title="Updates"
+      right={
+        <span className="text-fade text-xs font-cmd">
+          v{current || '—'}
+        </span>
+      }
+    >
+      <p className="text-fade text-sm italic mb-4">
+        Pulls the latest release from <span className="font-cmd text-gold">github.com/Grimoire-z/grimoire</span>.
+        Uses your local <span className="font-cmd">gh</span> CLI for auth — no token stored in the app.
+      </p>
+
+      <div className="flex flex-wrap gap-3 items-center">
+        <button
+          onClick={check}
+          disabled={checking || phase === 'downloading'}
+          className="text-xs font-cmd uppercase tracking-wider text-gold border border-gold px-3 py-1.5 hover:bg-active transition disabled:opacity-50"
+        >
+          {checking ? '… checking' : '↻ check for updates'}
+        </button>
+
+        {result?.hasUpdate && result.asset && phase !== 'downloading' && phase !== 'launched' && (
+          <>
+            <button
+              onClick={install}
+              className="text-xs font-cmd uppercase tracking-wider border border-gold-strong bg-active px-3 py-1.5 hover:bg-card-hover transition"
+              style={{ color: 'var(--color-gold)' }}
+            >
+              ↓ download &amp; install v{result.latest.replace(/^v/, '')}
+            </button>
+            <button
+              onClick={openReleaseNotes}
+              className="text-xs font-cmd uppercase tracking-wider text-fade hover:text-parchment transition"
+            >
+              view release notes
+            </button>
+          </>
+        )}
+
+        {phase === 'downloading' && progress && (
+          <ProgressIndicator received={progress.received} total={progress.total} />
+        )}
+
+        <button
+          onClick={openReleases}
+          className="text-xs font-cmd text-fade hover:text-parchment transition ml-auto"
+          title="Open the GitHub releases page in your browser"
+        >
+          ↗ open releases page
+        </button>
+      </div>
+
+      {result && phase === 'idle' && (
+        <div className="mt-3 text-sm">
+          {result.hasUpdate ? (
+            <span className="text-gold">
+              v{result.latest.replace(/^v/, '')} is available — you're on v{result.current}.
+            </span>
+          ) : (
+            <span className="text-fade">✓ you're on the latest (v{result.current}).</span>
+          )}
+        </div>
+      )}
+
+      {phase === 'launched' && (
+        <div className="mt-3 text-sm text-gold">
+          ✓ Installer launched. Approve the UAC prompt, then close Grimoire so the installer can upgrade.
+        </div>
+      )}
+
+      {error && (
+        <div className="mt-3 text-sm text-crimson font-cmd">
+          ✕ {error}
+        </div>
+      )}
+    </SectionCard>
+  );
+}
+
+function ProgressIndicator({ received, total }) {
+  const pct = total ? Math.round((received / total) * 100) : 0;
+  return (
+    <div className="flex items-center gap-2 text-xs font-cmd text-fade">
+      <span>downloading</span>
+      <div className="w-40 h-2 border border-gold rounded-sm overflow-hidden bg-grimoire">
+        <div className="h-full transition-all"
+             style={{ width: `${pct}%`, backgroundColor: 'var(--color-gold)' }} />
+      </div>
+      <span className="text-parchment">{formatBytes(received)} / {formatBytes(total)}</span>
+    </div>
   );
 }
 

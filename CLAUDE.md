@@ -36,7 +36,7 @@ This file is the source of truth for project memory. It's committed to the repo 
 - `src/views/CharacterView.jsx` — Roll20-style sheet editor (identity, combat, abilities, saves, skills, attacks, spells, DDB import)
 - `src/views/ModifierForgeView.jsx` — modifier library editor
 - `src/views/TargetsView.jsx` — target book; folders + targets
-- `src/views/SettingsView.jsx` — full-page settings (theme + font preset chooser); reached via the d20 button in the header
+- `src/views/SettingsView.jsx` — full-page settings (theme + font preset chooser + Updates panel); reached via the d20 button in the header
 - `src/index.css` — Google Fonts + Tailwind import + custom theme classes
 - `scripts/inspect-pdf.mjs`, `scripts/test-mapper.mjs` — offline diagnostic tools for tuning the PDF importer; useful when DDB shifts the layout
 
@@ -66,6 +66,14 @@ This file is the source of truth for project memory. It's committed to the repo 
 - `--color-gold-rgb` / `--color-crimson-rgb` are stored as comma-separated triplets so existing `rgba(...)` alpha-tinted borders and shadows compose with the theme color via `rgba(var(--color-gold-rgb), 0.35)`.
 - New themes should preserve role semantics: `gold` is the primary accent, `crimson` is for danger / low-resource indicators. Shift hue/saturation, don't swap roles.
 - Inline `style={{ backgroundColor: '#d4a644' }}` ad-hoc colors should be `style={{ backgroundColor: 'var(--color-gold)' }}` so theme swaps reach them. The few legacy spots in `components.jsx` (Checkbox/ModifierRow filled checkmark, TabBar underline) have been converted; keep the convention going.
+
+### Updates (v0.5+)
+
+- In-app update check + download lives in `SettingsView` → Updates section. Main-process IPC handlers live in `electron/main.cjs`; preload exposes `window.grimoire.checkForUpdate / downloadAndInstall / getVersion / openExternal / onDownloadProgress`.
+- Because the repo is private, the GitHub API and asset downloads need auth. **Instead of embedding a token in the binary** (which would leak if the .exe is shared), `getGhToken()` shells out to `gh auth token` on the user's machine. Both of the user's devices already have `gh` authenticated, and this dodges the "shipped credential" footgun.
+- Asset endpoint requires `Accept: application/octet-stream` to return binary; the `https.get` wrapper follows redirects (GitHub serves assets via a redirect to a signed S3 URL).
+- The Setup installer is preferred for auto-update (NSIS handles "upgrade over existing install"); the portable target is not used here. The "Open releases page" fallback button always works in case `gh` is missing or auth is stale.
+- After download, `shell.openPath` runs the installer; the user accepts the UAC prompt and closes Grimoire so NSIS can replace it. Auto-quit-and-relaunch is not wired up — keep it manual so unsaved state isn't lost without warning.
 
 ### Targets & folders (v0.3+)
 
