@@ -64,6 +64,48 @@
   --color-crimson-rgb: 208, 64, 80;
 }
 
+[data-theme="frostbound"] {
+  --color-bg:          #0c1620;
+  --color-card:        #16243a;
+  --color-card-hover:  #1f3050;
+  --color-active:      #2a4068;
+  --color-cmd-bg:      #050a14;
+  --color-parchment:   #d8e4f0;
+  --color-fade:        #6e80a0;
+  --color-gold:        #88c8e8;
+  --color-gold-rgb:    136, 200, 232;
+  --color-crimson:     #c87080;
+  --color-crimson-rgb: 200, 112, 128;
+}
+
+[data-theme="infernal"] {
+  --color-bg:          #1a0e08;
+  --color-card:        #281510;
+  --color-card-hover:  #381e16;
+  --color-active:      #4a2820;
+  --color-cmd-bg:      #0c0604;
+  --color-parchment:   #f0d8c0;
+  --color-fade:        #a08068;
+  --color-gold:        #e8924c;
+  --color-gold-rgb:    232, 146, 76;
+  --color-crimson:     #d04040;
+  --color-crimson-rgb: 208, 64, 64;
+}
+
+[data-theme="tideborne"] {
+  --color-bg:          #08161a;
+  --color-card:        #102530;
+  --color-card-hover:  #163040;
+  --color-active:      #1e4254;
+  --color-cmd-bg:      #04080a;
+  --color-parchment:   #d0e0e0;
+  --color-fade:        #6a8888;
+  --color-gold:        #6cb8a8;
+  --color-gold-rgb:    108, 184, 168;
+  --color-crimson:     #c06868;
+  --color-crimson-rgb: 192, 104, 104;
+}
+
 /* Font presets — same pattern. Default = Manuscript. */
 :root,
 [data-font-preset="manuscript"] {

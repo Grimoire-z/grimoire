@@ -28,6 +28,24 @@ export const THEMES = [
     sub: 'blood & tarnished silver',
     swatch: { bg: '#16080a', card: '#241016', accent: '#c5c0a8', danger: '#d04050' },
   },
+  {
+    id: 'frostbound',
+    name: 'Frostbound',
+    sub: 'glacier & frostlight',
+    swatch: { bg: '#0c1620', card: '#16243a', accent: '#88c8e8', danger: '#c87080' },
+  },
+  {
+    id: 'infernal',
+    name: 'Infernal',
+    sub: 'embers & molten brass',
+    swatch: { bg: '#1a0e08', card: '#281510', accent: '#e8924c', danger: '#d04040' },
+  },
+  {
+    id: 'tideborne',
+    name: 'Tideborne',
+    sub: 'deep tide & sea-glass',
+    swatch: { bg: '#08161a', card: '#102530', accent: '#6cb8a8', danger: '#c06868' },
+  },
 ];
 
 export const FONT_PRESETS = [
