@@ -288,6 +288,17 @@ function Attacks({ character, setCharacter }) {
 }
 
 function Spells({ character, setCharacter, patchSlot }) {
+  // Session-only UI state: which levels are expanded, which individual
+  // spells are open for editing. Not persisted — defaulting to all
+  // collapsed each session is what makes the spellbook compact again.
+  const [openLevels, setOpenLevels] = useState({});
+  const [openSpells, setOpenSpells] = useState({}); // key: `${level}.${idx}`
+
+  const toggleLevel = (level) =>
+    setOpenLevels(o => ({ ...o, [level]: !o[level] }));
+  const toggleSpell = (level, i) =>
+    setOpenSpells(o => ({ ...o, [`${level}.${i}`]: !o[`${level}.${i}`] }));
+
   const updateSpell = (level, i, patch) =>
     setCharacter(c => ({
       ...c,
@@ -296,36 +307,74 @@ function Spells({ character, setCharacter, patchSlot }) {
         [level]: c.spells[level].map((s, idx) => idx === i ? { ...s, ...patch } : s),
       },
     }));
-  const addSpell = (level) =>
+
+  // Newly-added spells start blank, so auto-open them for editing and
+  // make sure the containing level is expanded too.
+  const addSpell = (level) => {
+    const newIdx = (character.spells[level] || []).length;
     setCharacter(c => ({
       ...c,
       spells: { ...c.spells, [level]: [...(c.spells[level] || []), { id: '', name: '', sub: '' }] },
     }));
-  const removeSpell = (level, i) =>
+    setOpenLevels(o => ({ ...o, [level]: true }));
+    setOpenSpells(o => ({ ...o, [`${level}.${newIdx}`]: true }));
+  };
+
+  // On removal, shift openSpells keys for the same level down by one for
+  // any index above the removed one, so the open/closed state stays
+  // pinned to the right spell instead of drifting to its neighbor.
+  const removeSpell = (level, idx) => {
     setCharacter(c => ({
       ...c,
-      spells: { ...c.spells, [level]: c.spells[level].filter((_, idx) => idx !== i) },
+      spells: { ...c.spells, [level]: c.spells[level].filter((_, i) => i !== idx) },
     }));
+    setOpenSpells(o => {
+      const next = {};
+      Object.entries(o).forEach(([k, v]) => {
+        const [l, i] = k.split('.').map(Number);
+        if (l !== level)  next[k] = v;
+        else if (i < idx) next[k] = v;
+        else if (i > idx) next[`${level}.${i - 1}`] = v;
+        // i === idx → drop
+      });
+      return next;
+    });
+  };
 
   return (
     <SectionCard title="spells">
-      <div className="space-y-4">
+      <div className="space-y-1.5">
         {SLOT_LEVELS.map(level => {
           const spells = character.spells[level] || [];
           const slots  = character.spellSlots?.[level] || { current: 0, max: 0 };
           const preparedCount = spells.filter(s => s.prepared).length;
+          const isOpen = !!openLevels[level];
           return (
-            <div key={level}>
-              <div className="flex items-center justify-between mb-1.5">
-                <h4 className="font-display text-sm text-gold uppercase">
-                  {level === 0 ? 'Cantrips' : `Level ${level}`}
+            <div key={level} className="bg-grimoire border border-gold rounded-sm">
+              <div className="flex items-center justify-between px-2 py-1.5 gap-2">
+                <button
+                  onClick={() => toggleLevel(level)}
+                  className="flex items-center gap-2 flex-1 text-left min-w-0"
+                  aria-expanded={isOpen}
+                  title={isOpen ? 'collapse level' : 'expand level'}
+                >
+                  <span
+                    aria-hidden="true"
+                    className="text-gold font-cmd text-xs inline-block transition-transform"
+                    style={{ transform: isOpen ? 'rotate(90deg)' : 'rotate(0deg)' }}
+                  >
+                    ▶
+                  </span>
+                  <span className="font-display text-sm text-gold uppercase tracking-wide flex-shrink-0">
+                    {level === 0 ? 'Cantrips' : `Level ${level}`}
+                  </span>
                   {spells.length > 0 && (
-                    <span className="text-fade font-cmd text-xs normal-case ml-2">
+                    <span className="text-fade font-cmd text-xs normal-case truncate">
                       · {preparedCount}/{spells.length} prepared
                     </span>
                   )}
-                </h4>
-                <div className="flex items-center gap-2 text-xs text-fade">
+                </button>
+                <div className="flex items-center gap-2 text-xs text-fade flex-shrink-0">
                   {level === 0 ? (
                     <span className="italic">at will</span>
                   ) : (
@@ -341,40 +390,29 @@ function Spells({ character, setCharacter, patchSlot }) {
                     </>
                   )}
                   <button onClick={() => addSpell(level)}
-                          className="text-xs font-cmd text-gold border border-gold px-2 py-0.5 hover:bg-active rounded-sm ml-2">
+                          className="text-xs font-cmd text-gold border border-gold px-2 py-0.5 hover:bg-active rounded-sm">
                     + add
                   </button>
                 </div>
               </div>
-              {spells.length > 0 && (
-                <div className="space-y-1.5">
-                  {spells.map((s, i) => (
-                    <div key={i} className="bg-grimoire border border-gold rounded-sm px-2 py-1.5 space-y-1.5">
-                      <div className="grid grid-cols-12 gap-2 items-center">
-                        <input className="lined col-span-4 font-cmd" placeholder="id (Avrae name)"
-                               value={s.id}
-                               onChange={e => updateSpell(level, i, { id: e.target.value })} />
-                        <input className="lined col-span-3" placeholder="display name"
-                               value={s.name}
-                               onChange={e => updateSpell(level, i, { name: e.target.value })} />
-                        <input className="lined col-span-3" placeholder="subtitle"
-                               value={s.sub}
-                               onChange={e => updateSpell(level, i, { sub: e.target.value })} />
-                        <PreparedToggle
-                          prepared={!!s.prepared}
-                          onToggle={() => updateSpell(level, i, { prepared: !s.prepared })}
+              {isOpen && (
+                <div className="border-t border-gold px-2 py-2">
+                  {spells.length === 0 ? (
+                    <div className="text-fade text-xs italic">no spells — click + add</div>
+                  ) : (
+                    <div className="space-y-1.5">
+                      {spells.map((s, i) => (
+                        <SpellRow
+                          key={i}
+                          spell={s}
+                          expanded={!!openSpells[`${level}.${i}`]}
+                          onToggleExpand={() => toggleSpell(level, i)}
+                          onUpdate={(patch) => updateSpell(level, i, patch)}
+                          onRemove={() => removeSpell(level, i)}
                         />
-                        <button onClick={() => removeSpell(level, i)}
-                                className="text-fade hover:text-crimson text-sm col-span-1">✕</button>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <span className="text-fade text-xs uppercase tracking-wider w-14">phrase</span>
-                        <input className="lined flex-1" placeholder='flavor text · e.g. "by the radiant dawn!"'
-                               value={s.phrase || ''}
-                               onChange={e => updateSpell(level, i, { phrase: e.target.value })} />
-                      </div>
+                      ))}
                     </div>
-                  ))}
+                  )}
                 </div>
               )}
             </div>
@@ -382,6 +420,82 @@ function Spells({ character, setCharacter, patchSlot }) {
         })}
       </div>
     </SectionCard>
+  );
+}
+
+function SpellRow({ spell, expanded, onToggleExpand, onUpdate, onRemove }) {
+  const display = spell.name || spell.id || '(unnamed)';
+  const isPlaceholder = !spell.name && !spell.id;
+  return (
+    <div className="bg-card border border-gold rounded-sm">
+      <div className="flex items-center gap-2 px-2 py-1.5">
+        <span className={`text-sm flex-1 truncate ${isPlaceholder ? 'italic text-fade' : 'text-parchment'}`}>
+          {display}
+        </span>
+        <PreparedToggle
+          prepared={!!spell.prepared}
+          onToggle={() => onUpdate({ prepared: !spell.prepared })}
+        />
+        <button
+          onClick={onToggleExpand}
+          title={expanded ? 'close editor' : 'edit spell'}
+          aria-label={expanded ? 'close editor' : 'edit spell'}
+          aria-expanded={expanded}
+          className={`inline-flex items-center justify-center w-6 h-6 border rounded-sm transition ${
+            expanded ? 'text-gold border-gold-strong bg-active'
+                     : 'text-fade border-gold hover:text-parchment hover:bg-active'
+          }`}
+        >
+          <GearIcon size={12} />
+        </button>
+      </div>
+      {expanded && (
+        <div className="border-t border-gold px-2 py-2 space-y-2">
+          <div className="grid grid-cols-12 gap-2 items-center">
+            <span className="text-fade text-xs uppercase tracking-wider col-span-2">id</span>
+            <input className="lined col-span-10 font-cmd" placeholder="id (Avrae name)"
+                   value={spell.id}
+                   onChange={e => onUpdate({ id: e.target.value })} />
+          </div>
+          <div className="grid grid-cols-12 gap-2 items-center">
+            <span className="text-fade text-xs uppercase tracking-wider col-span-2">name</span>
+            <input className="lined col-span-10" placeholder="display name"
+                   value={spell.name}
+                   onChange={e => onUpdate({ name: e.target.value })} />
+          </div>
+          <div className="grid grid-cols-12 gap-2 items-center">
+            <span className="text-fade text-xs uppercase tracking-wider col-span-2">sub</span>
+            <input className="lined col-span-10" placeholder="subtitle"
+                   value={spell.sub || ''}
+                   onChange={e => onUpdate({ sub: e.target.value })} />
+          </div>
+          <div className="grid grid-cols-12 gap-2 items-center">
+            <span className="text-fade text-xs uppercase tracking-wider col-span-2">phrase</span>
+            <input className="lined col-span-10" placeholder='flavor text · e.g. "by the radiant dawn!"'
+                   value={spell.phrase || ''}
+                   onChange={e => onUpdate({ phrase: e.target.value })} />
+          </div>
+          <div className="flex justify-end pt-1">
+            <button onClick={onRemove}
+                    className="text-xs font-cmd uppercase tracking-wider text-fade hover:text-crimson border border-gold hover:border-crimson px-2 py-0.5 rounded-sm transition">
+              ✕ remove
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Lucide-style cog. Sized by the surrounding button.
+function GearIcon({ size = 12 }) {
+  return (
+    <svg viewBox="0 0 24 24" width={size} height={size}
+         fill="none" stroke="currentColor" strokeWidth="1.8"
+         strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <circle cx="12" cy="12" r="3" />
+      <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
+    </svg>
   );
 }
 

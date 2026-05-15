@@ -49,6 +49,7 @@ This file is the source of truth for project memory. It's committed to the repo 
 - Attacks: free-form repeating list.
 - Each attack/spell has `id` (Avrae's name for `!attack "<id>"` / `!cast "<id>"`) separate from display `name`. Also has optional `phrase` for per-action flavor text.
 - Spells additionally carry an optional `prepared` bool. The Roll view's Spells tab has a "Prepared only" filter (persisted as `settings.preparedOnly`) which, when on, hides unprepared spells from both the level pagination and the spell grid. Character editor exposes a per-spell "Prep" chip and a `N/M prepared` count in each level header. Cantrips can be marked too — useful for "always show on my casting page" semantics even though 5e cantrips aren't technically "prepared".
+- Character editor's Spells card uses a two-tier accordion (v0.6+): each level is collapsible (closed by default so a full spellbook compacts to one line per level), and each spell row inside has a compact form (name + Prep chip + ⚙ gear) plus a gear-expanded editor (id, name, sub, phrase, ✕ remove). Expansion state for both tiers is session-local React state (not persisted), since the point of defaulting to closed is to keep the view compact every session. Clicking `+ add` auto-expands both the level and the new (blank) spell so you land in edit mode immediately. Removal shifts higher per-spell open-keys down by one so state stays pinned to the right entry instead of drifting.
 
 ### Composer
 
