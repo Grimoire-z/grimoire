@@ -75,7 +75,7 @@ This file is the source of truth for project memory. It's committed to the repo 
 - Import **replaces** all data — no merge. There's no per-section "import just spells" mode by design; merge semantics for richly-nested per-character data get confusing fast, and the destructive choice is gated behind a `window.confirm()`.
 - `parseImport` validates: valid JSON, top-level object, schemaVersion matches `SCHEMA_VERSION`, and a `character` object exists. Anything else (newer schema, garbage file, missing character) throws a typed error message that surfaces in the UI status line.
 - The bulk-replace is wired through `replaceState(next)` in `App.jsx` — it splats each slice into its useState setter, so the persist `useEffect` fires once afterward and the new state lands in localStorage too.
-- This is the **manual** sync option — the user moves the file across devices via whatever cloud storage they already use (Dropbox, OneDrive, etc.). Cloud-folder / gist-based automatic sync was discussed but deferred; either could layer on top of the same `downloadExport`/`parseImport` helpers without re-architecting.
+- Sync is intentionally manual — the user moves the file across devices via whatever cloud storage they already use (Dropbox, OneDrive, email-to-self, etc.). Automatic options were considered and explicitly declined; don't re-pitch them.
 
 ### App icon + Credits (v0.6+)
 
@@ -125,9 +125,12 @@ The Character view's PDF import section has a diagnostics panel with field/widge
 
 ## Open work / known stubs
 
-- Releases are unsigned (placeholder signtool only); first-run SmartScreen prompt is expected. Real signing would need an EV / OV code-signing cert.
 - Single-character only (no vault/picker)
-- Cross-device sync is manual (Settings → Backup & Restore). Automatic options (cloud-folder watcher, gist-based) were discussed but not built — could layer on top of the existing `downloadExport`/`parseImport` helpers without rework.
+
+## Settled-by-design (don't re-pitch)
+
+- **Releases are unsigned.** Grimoire is a personal app for the owner's own machines; the SmartScreen first-run prompt is acceptable, and an EV/OV cert isn't worth the recurring cost. The build still runs `signtool.exe` for a placeholder signature so the resource section is well-formed.
+- **Cross-device sync is manual (JSON export/import).** Automatic options — cloud-folder watcher, gist-based — were considered and declined. The single-machine-at-a-time workflow + manual file move is the design, not a stub.
 
 ## Windows toolchain quirks
 
