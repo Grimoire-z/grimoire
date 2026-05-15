@@ -563,9 +563,8 @@ function DdbImport({ setCharacter }) {
   };
 
   return (
-    <SectionCard title="import from D&D Beyond">
+    <SectionCard title="Import Character sheet">
       <div className="text-xs text-fade italic mb-2">
-        DDB retired their JSON character export, so PDF is the only supported path now.
         select a D&amp;D Beyond character-sheet <span className="font-cmd text-gold">.pdf</span> export — best-effort field extraction.
         importing will overwrite character info (ability scores, HP, AC, etc.) — modifiers are left alone.
       </div>
