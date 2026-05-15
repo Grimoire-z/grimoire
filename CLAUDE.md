@@ -28,7 +28,7 @@ This file is the source of truth for project memory. It's committed to the repo 
 - `src/App.jsx` — top-level component: header, mode switching (Roll / Character / Targets / Modifiers / Settings)
 - `src/state.js` — DEFAULT_CHARACTER, DEFAULT_MODIFIERS, DEFAULT_SETTINGS (theme/fontPreset), SAVE_DEFS, SKILL_DEFS, loadState/saveState (localStorage)
 - `src/composer.js` — pure command composition (compose, composeFromMod, substituteParams)
-- `src/ddbPdfImport.js` — D&D Beyond fillable PDF importer; uses pdfjs-dist worker via `?worker` Vite import. PDF is the only supported import path (DDB retired their JSON character-service endpoint, so the previous `ddbImport.js` JSON path was removed in v0.5+)
+- `src/ddbPdfImport.js` — D&D Beyond fillable PDF importer; uses pdfjs-dist worker via `?worker` Vite import. PDF is the only supported import path (DDB retired their JSON character-service endpoint, so the previous `ddbImport.js` JSON path was removed in v0.5+). pdfjs-dist itself is dynamic-imported via a memoized `loadPdfjs()` helper inside this file — keeps the main bundle ~270KB instead of ~660KB. **Don't re-add a top-level `import * as pdfjs from 'pdfjs-dist'`** or the chunk-split benefit goes away.
 - `src/components.jsx` — shared (Checkbox, TabBar, ActionCard, ModifierRow, FieldLabel, SectionCard, D20Icon)
 - `src/themes.js` — registry of color themes and font presets surfaced in SettingsView (paired with CSS blocks in `index.css`)
 - `src/views/RollView.jsx` — composer view; targets/modifiers/spells side panel, paginated spells, attack/spell dedup
@@ -112,7 +112,6 @@ The Character view's PDF import section has a diagnostics panel with field/widge
 - Releases are unsigned (placeholder signtool only); first-run SmartScreen prompt is expected. Real signing would need an EV / OV code-signing cert.
 - Single-character only (no vault/picker)
 - Auto-derived save/skill mods from ability scores not implemented (manual entry only)
-- Main JS chunk is ~660KB (Vite warned >500KB) because pdfjs-dist is loaded synchronously; could be code-split via dynamic import
 - localStorage data doesn't sync across machines — would need export/import-to-JSON or point-at-synced-folder mechanism
 
 ## Windows toolchain quirks

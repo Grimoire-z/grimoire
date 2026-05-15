@@ -9,10 +9,35 @@
 // We try form fields first (more reliable when present) and fall back to
 // text extraction. Whatever we can't map confidently is left untouched.
 
-import * as pdfjs from 'pdfjs-dist';
-import PdfWorker from 'pdfjs-dist/build/pdf.worker.min.mjs?worker';
+// ─── pdfjs-dist lazy loader ───────────────────────────────────────────────
+//
+// pdfjs-dist is large (~400KB minified) and is only needed when the user
+// actually triggers a PDF import. We dynamic-import it on first use and
+// cache the resulting promise so subsequent imports in the same session
+// don't re-pay the load. The worker module is also dynamic-imported via
+// Vite's `?worker` suffix so it gets its own emitted chunk; both chunks
+// load in parallel.
+//
+// Result: the main bundle drops by ~400KB (was triggering Vite's >500KB
+// chunk-size warning); the first PDF import pays a one-time ~200-500ms
+// load hit.
 
-pdfjs.GlobalWorkerOptions.workerPort = new PdfWorker();
+let pdfjsModulePromise = null;
+
+function loadPdfjs() {
+  if (!pdfjsModulePromise) {
+    pdfjsModulePromise = (async () => {
+      const [pdfjs, workerMod] = await Promise.all([
+        import('pdfjs-dist'),
+        import('pdfjs-dist/build/pdf.worker.min.mjs?worker'),
+      ]);
+      const PdfWorker = workerMod.default;
+      pdfjs.GlobalWorkerOptions.workerPort = new PdfWorker();
+      return pdfjs;
+    })();
+  }
+  return pdfjsModulePromise;
+}
 
 // ─── Loaders ───────────────────────────────────────────────────────────────
 
@@ -587,6 +612,8 @@ async function extractXfaFields(pdf) {
 export async function importDdbPdfFile(file) {
   const buf = await file.arrayBuffer();
   console.log('[grimoire] pdf: getDocument start, bytes=', buf.byteLength);
+  // First call in a session loads pdfjs-dist + its worker; cached after that.
+  const pdfjs = await loadPdfjs();
   // enableXfa surfaces XFA-form text in some PDFs; harmless when not present.
   const pdf = await pdfjs.getDocument({ data: buf, enableXfa: true }).promise;
   console.log('[grimoire] pdf: numPages=', pdf.numPages);
