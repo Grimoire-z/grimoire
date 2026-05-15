@@ -1,11 +1,14 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { THEMES, FONT_PRESETS } from '../themes.js';
 import { SectionCard } from '../components.jsx';
+import { downloadExport, parseImport } from '../state.js';
 
-export default function SettingsView({ settings, setSettings }) {
+export default function SettingsView({ settings, setSettings, state, replaceState }) {
   return (
     <main className="px-6 pb-12 max-w-5xl mx-auto relative z-10 flex flex-col gap-4">
       <UpdatesSection />
+
+      <BackupRestoreSection state={state} replaceState={replaceState} />
 
       <SectionCard title="Theme">
         <p className="text-fade text-sm italic mb-4">
@@ -37,6 +40,92 @@ export default function SettingsView({ settings, setSettings }) {
         </div>
       </SectionCard>
     </main>
+  );
+}
+
+// ─── Backup & Restore ────────────────────────────────────────────────────
+// Manual JSON export / import. Cross-device sync is intentionally manual
+// for now (the user moves the file via whatever cloud-storage they
+// already use). The exported JSON matches the localStorage payload shape
+// plus an `exportedAt` timestamp, so a roundtrip is lossless. Import
+// fully replaces all data — there is no merge — gated by a confirm()
+// since it's destructive.
+
+function BackupRestoreSection({ state, replaceState }) {
+  const [status, setStatus] = useState(null);
+  const fileInputRef = useRef(null);
+
+  const onExport = () => {
+    try {
+      const filename = downloadExport(state);
+      setStatus({ ok: true, msg: `exported · ${filename}` });
+    } catch (e) {
+      setStatus({ ok: false, msg: e.message || String(e) });
+    }
+  };
+
+  const onPickFile = () => fileInputRef.current?.click();
+
+  const onFileChange = async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = ''; // allow re-selecting the same file later
+    if (!file) return;
+    try {
+      const text = await file.text();
+      const parsed = parseImport(text);
+      const ok = window.confirm(
+        `Replace ALL current data with the contents of "${file.name}"?\n\n` +
+        `Character, modifiers, targets, folders, and theme/font preferences ` +
+        `on this device will be overwritten. This cannot be undone.\n\n` +
+        `(Export first if you want to keep what's here.)`
+      );
+      if (!ok) {
+        setStatus({ ok: false, msg: 'import cancelled' });
+        return;
+      }
+      replaceState(parsed);
+      const charName = parsed.character?.name || 'character';
+      setStatus({ ok: true, msg: `imported ${charName} from ${file.name}` });
+    } catch (err) {
+      setStatus({ ok: false, msg: err.message || String(err) });
+    }
+  };
+
+  return (
+    <SectionCard title="Backup & Restore">
+      <p className="text-fade text-sm italic mb-4">
+        Export everything on this device — character, modifiers, targets, folders, and theme/font preferences — to a JSON file you can stash anywhere (Dropbox, OneDrive, USB, email-to-self). Import on another device to replace its data with the contents of the file.
+      </p>
+      <div className="flex flex-wrap items-center gap-3">
+        <button
+          onClick={onExport}
+          className="text-xs font-cmd uppercase tracking-wider text-gold border border-gold-strong px-3 py-1.5 hover:bg-active transition"
+        >
+          ↑ Export to JSON
+        </button>
+        <button
+          onClick={onPickFile}
+          className="text-xs font-cmd uppercase tracking-wider text-fade hover:text-parchment border border-gold px-3 py-1.5 hover:bg-active transition"
+        >
+          ↓ Import from JSON…
+        </button>
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept=".json,application/json"
+          className="hidden"
+          onChange={onFileChange}
+        />
+        {status && (
+          <span className={`text-xs font-cmd ${status.ok ? 'text-gold' : 'text-crimson'}`}>
+            {status.msg}
+          </span>
+        )}
+      </div>
+      <p className="text-fade text-[11px] italic mt-3">
+        Import replaces all data — there's no merge. The file's schema version must match this app's.
+      </p>
+    </SectionCard>
   );
 }
 

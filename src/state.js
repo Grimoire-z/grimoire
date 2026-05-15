@@ -210,6 +210,62 @@ export function saveState(state) {
   }
 }
 
+// ─── Backup & Restore ─────────────────────────────────────────────────────
+// Same shape as the localStorage payload (`{ schemaVersion, character,
+// modifiers, targets, folders, settings }`), with an extra `exportedAt`
+// ISO timestamp for human-readable provenance. A round-trip through these
+// helpers is lossless: importing what you just exported reproduces state.
+
+export function downloadExport(state) {
+  const payload = {
+    schemaVersion: SCHEMA_VERSION,
+    exportedAt: new Date().toISOString(),
+    ...state,
+  };
+  const json = JSON.stringify(payload, null, 2);
+  const blob = new Blob([json], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const safeName = (state.character?.name || 'export')
+    .toLowerCase().replace(/[^a-z0-9-]+/g, '-').replace(/^-+|-+$/g, '') || 'export';
+  const date = new Date().toISOString().slice(0, 10);
+
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `grimoire-${safeName}-${date}.json`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+
+  return a.download; // filename, for status feedback
+}
+
+// Parses + validates an exported JSON string. Throws on malformed input
+// or schema-version mismatch. On success returns the state slice the
+// caller will splat into React state via replaceState.
+export function parseImport(text) {
+  let parsed;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    throw new Error('not valid JSON');
+  }
+  if (typeof parsed !== 'object' || parsed === null) {
+    throw new Error('not a Grimoire export file');
+  }
+  if (parsed.schemaVersion !== SCHEMA_VERSION) {
+    throw new Error(
+      `incompatible schema version (file is v${parsed.schemaVersion ?? '?'}, app is v${SCHEMA_VERSION})`
+    );
+  }
+  // Loose shape check — enough to reject unrelated JSON without being so
+  // strict that future small additions to the payload would block import.
+  if (!parsed.character || typeof parsed.character !== 'object') {
+    throw new Error('export is missing the character section');
+  }
+  return parsed;
+}
+
 export function resetState() {
   localStorage.removeItem(STORAGE_KEY);
 }

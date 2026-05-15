@@ -48,6 +48,18 @@ export default function App() {
     root.dataset.fontPreset = settings.fontPreset;
   }, [settings.theme, settings.fontPreset]);
 
+  // Bulk-replace all persisted slices from a parsed import payload.
+  // Used by SettingsView's Backup & Restore section; matches the shape
+  // saveState writes so a round-trip is lossless. Missing slices fall
+  // back to current state (defensive — a sane export always carries all).
+  const replaceState = (next) => {
+    if (next.character) setCharacter(next.character);
+    if (next.modifiers) setModifiers(next.modifiers);
+    if (next.targets)   setTargets(next.targets);
+    if (next.folders)   setFolders(next.folders);
+    if (next.settings)  setSettings(s => ({ ...DEFAULT_SETTINGS, ...next.settings }));
+  };
+
   return (
     <div className="bg-grimoire grain font-body text-parchment min-h-screen relative overflow-hidden">
       <Header
@@ -87,7 +99,11 @@ export default function App() {
         />
       )}
       {mode === 'settings' && (
-        <SettingsView settings={settings} setSettings={setSettings} />
+        <SettingsView
+          settings={settings} setSettings={setSettings}
+          state={{ character, modifiers, targets, folders, settings }}
+          replaceState={replaceState}
+        />
       )}
     </div>
   );

@@ -26,7 +26,7 @@ This file is the source of truth for project memory. It's committed to the repo 
 - `electron/preload.cjs` — exposes `window.grimoire` (platform info)
 - `src/main.jsx` — Vite entry
 - `src/App.jsx` — top-level component: header, mode switching (Roll / Character / Targets / Modifiers / Settings)
-- `src/state.js` — DEFAULT_CHARACTER, DEFAULT_MODIFIERS, DEFAULT_SETTINGS (theme/fontPreset), SAVE_DEFS, SKILL_DEFS, loadState/saveState (localStorage)
+- `src/state.js` — DEFAULT_CHARACTER, DEFAULT_MODIFIERS, DEFAULT_SETTINGS (theme/fontPreset), SAVE_DEFS, SKILL_DEFS, loadState/saveState (localStorage), downloadExport/parseImport (JSON backup & restore)
 - `src/composer.js` — pure command composition (compose, composeFromMod, substituteParams)
 - `src/ddbPdfImport.js` — D&D Beyond fillable PDF importer; uses pdfjs-dist worker via `?worker` Vite import. PDF is the only supported import path (DDB retired their JSON character-service endpoint, so the previous `ddbImport.js` JSON path was removed in v0.5+). pdfjs-dist itself is dynamic-imported via a memoized `loadPdfjs()` helper inside this file — keeps the main bundle ~270KB instead of ~660KB. **Don't re-add a top-level `import * as pdfjs from 'pdfjs-dist'`** or the chunk-split benefit goes away.
 - `src/components.jsx` — shared (Checkbox, TabBar, ActionCard, ModifierRow, FieldLabel, SectionCard, D20Icon)
@@ -66,6 +66,16 @@ This file is the source of truth for project memory. It's committed to the repo 
 - `--color-gold-rgb` / `--color-crimson-rgb` are stored as comma-separated triplets so existing `rgba(...)` alpha-tinted borders and shadows compose with the theme color via `rgba(var(--color-gold-rgb), 0.35)`.
 - New themes should preserve role semantics: `gold` is the primary accent, `crimson` is for danger / low-resource indicators. Shift hue/saturation, don't swap roles.
 - Inline `style={{ backgroundColor: '#d4a644' }}` ad-hoc colors should be `style={{ backgroundColor: 'var(--color-gold)' }}` so theme swaps reach them. The few legacy spots in `components.jsx` (Checkbox/ModifierRow filled checkmark, TabBar underline) have been converted; keep the convention going.
+
+### Backup & Restore / cross-device sync (v0.6+)
+
+- Settings → **Backup & Restore** exposes Export (download JSON) and Import (file picker, with confirm) buttons. Helpers live in `state.js`: `downloadExport(state)` and `parseImport(text)`.
+- The exported JSON file is exactly the localStorage payload shape — `{ schemaVersion, character, modifiers, targets, folders, settings }` — plus an `exportedAt` ISO timestamp for human provenance. A round-trip (export → import) is intentionally lossless so users can use this as a backup or to move state between machines.
+- Filename pattern: `grimoire-<slugified-character-name>-YYYY-MM-DD.json` (falls back to `grimoire-export-YYYY-MM-DD.json` if the name is empty).
+- Import **replaces** all data — no merge. There's no per-section "import just spells" mode by design; merge semantics for richly-nested per-character data get confusing fast, and the destructive choice is gated behind a `window.confirm()`.
+- `parseImport` validates: valid JSON, top-level object, schemaVersion matches `SCHEMA_VERSION`, and a `character` object exists. Anything else (newer schema, garbage file, missing character) throws a typed error message that surfaces in the UI status line.
+- The bulk-replace is wired through `replaceState(next)` in `App.jsx` — it splats each slice into its useState setter, so the persist `useEffect` fires once afterward and the new state lands in localStorage too.
+- This is the **manual** sync option — the user moves the file across devices via whatever cloud storage they already use (Dropbox, OneDrive, etc.). Cloud-folder / gist-based automatic sync was discussed but deferred; either could layer on top of the same `downloadExport`/`parseImport` helpers without re-architecting.
 
 ### Updates (v0.5+)
 
@@ -111,7 +121,7 @@ The Character view's PDF import section has a diagnostics panel with field/widge
 - No custom application icon — electron-builder uses the default Electron icon. Drop a `build/icon.ico` (256×256, multi-resolution) to fix.
 - Releases are unsigned (placeholder signtool only); first-run SmartScreen prompt is expected. Real signing would need an EV / OV code-signing cert.
 - Single-character only (no vault/picker)
-- localStorage data doesn't sync across machines — would need export/import-to-JSON or point-at-synced-folder mechanism
+- Cross-device sync is manual (Settings → Backup & Restore). Automatic options (cloud-folder watcher, gist-based) were discussed but not built — could layer on top of the existing `downloadExport`/`parseImport` helpers without rework.
 
 ## Windows toolchain quirks
 
