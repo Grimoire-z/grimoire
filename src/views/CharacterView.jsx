@@ -369,22 +369,23 @@ function Spells({ character, setCharacter, patchSlot }) {
                     {level === 0 ? 'Cantrips' : `Level ${level}`}
                   </span>
                   {spells.length > 0 && (
-                    <span className="text-fade font-cmd text-xs normal-case truncate">
+                    <span className="text-fade font-cmd text-xs normal-case truncate min-w-0">
                       · {preparedCount}/{spells.length} prepared
                     </span>
                   )}
                 </button>
-                <div className="flex items-center gap-2 text-xs text-fade flex-shrink-0">
+                <div className="flex items-center gap-1.5 text-xs text-fade flex-shrink-0">
                   {level === 0 ? (
                     <span className="italic">at will</span>
                   ) : (
                     <>
-                      <span>slots</span>
-                      <input className="lined w-10 text-right font-cmd" type="number" min="0"
+                      <input className="lined w-8 text-right font-cmd" type="number" min="0"
+                             title="current spell slots"
                              value={slots.current}
                              onChange={e => patchSlot(level, { current: Number(e.target.value) || 0 })} />
-                      <span>/</span>
-                      <input className="lined w-10 text-right font-cmd" type="number" min="0"
+                      <span aria-hidden="true">/</span>
+                      <input className="lined w-8 text-right font-cmd" type="number" min="0"
+                             title="max spell slots"
                              value={slots.max}
                              onChange={e => patchSlot(level, { max: Number(e.target.value) || 0 })} />
                     </>
