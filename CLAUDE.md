@@ -103,6 +103,8 @@ Some DDB field names have trailing whitespace (`DEXmod `, `Stealth `); `readFiel
 
 DDB sometimes lists a spell twice (e.g. native list + "Always Prepared" entry); the importer dedupes by id within each level, and weapons dedup overall.
 
+After parsing, `mapSpells` sorts each level's spell array alphabetically by display `name` (case-insensitive, locale-aware via `localeCompare` with `sensitivity: 'base'`). The PDF's encoded order is whatever DDB exported (often class-source clustered) and isn't useful in-app; alpha order makes a long spellbook navigable in the Character editor and in the Roll view's spell grid. Array#sort is stable in modern JS, so any duplicates that slipped past dedup keep their relative order.
+
 The Character view's PDF import section has a diagnostics panel with field/widget filters — useful when DDB shifts the layout again.
 
 ## Open work / known stubs

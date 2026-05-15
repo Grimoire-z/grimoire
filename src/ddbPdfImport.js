@@ -555,6 +555,17 @@ async function mapSpells(pdf, fields) {
     }
   }
 
+  // Sort each level's spells alphabetically by display name. PDF encoding
+  // order is whatever DDB exported (often class-source clustered) and is
+  // not useful in the editor; alpha makes a long spellbook navigable.
+  // Case-insensitive + locale-aware. Array#sort is stable in modern JS,
+  // so any duplicates (shouldn't happen after dedup) keep original order.
+  for (const level of Object.keys(spellsByLevel)) {
+    spellsByLevel[level].sort((a, b) =>
+      a.name.localeCompare(b.name, undefined, { sensitivity: 'base' })
+    );
+  }
+
   return { spellsByLevel, spellSlots };
 }
 
