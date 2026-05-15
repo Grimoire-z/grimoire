@@ -111,7 +111,6 @@ The Character view's PDF import section has a diagnostics panel with field/widge
 - No custom application icon — electron-builder uses the default Electron icon. Drop a `build/icon.ico` (256×256, multi-resolution) to fix.
 - Releases are unsigned (placeholder signtool only); first-run SmartScreen prompt is expected. Real signing would need an EV / OV code-signing cert.
 - Single-character only (no vault/picker)
-- Auto-derived save/skill mods from ability scores not implemented (manual entry only)
 - localStorage data doesn't sync across machines — would need export/import-to-JSON or point-at-synced-folder mechanism
 
 ## Windows toolchain quirks
