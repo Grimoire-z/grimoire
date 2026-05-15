@@ -28,8 +28,7 @@ This file is the source of truth for project memory. It's committed to the repo 
 - `src/App.jsx` — top-level component: header, mode switching (Roll / Character / Targets / Modifiers / Settings)
 - `src/state.js` — DEFAULT_CHARACTER, DEFAULT_MODIFIERS, DEFAULT_SETTINGS (theme/fontPreset), SAVE_DEFS, SKILL_DEFS, loadState/saveState (localStorage)
 - `src/composer.js` — pure command composition (compose, composeFromMod, substituteParams)
-- `src/ddbImport.js` — D&D Beyond JSON → partial character mapping (best-effort)
-- `src/ddbPdfImport.js` — D&D Beyond fillable PDF importer; uses pdfjs-dist worker via `?worker` Vite import
+- `src/ddbPdfImport.js` — D&D Beyond fillable PDF importer; uses pdfjs-dist worker via `?worker` Vite import. PDF is the only supported import path (DDB retired their JSON character-service endpoint, so the previous `ddbImport.js` JSON path was removed in v0.5+)
 - `src/components.jsx` — shared (Checkbox, TabBar, ActionCard, ModifierRow, FieldLabel, SectionCard, D20Icon)
 - `src/themes.js` — registry of color themes and font presets surfaced in SettingsView (paired with CSS blocks in `index.css`)
 - `src/views/RollView.jsx` — composer view; targets/modifiers/spells side panel, paginated spells, attack/spell dedup
@@ -111,7 +110,6 @@ The Character view's PDF import section has a diagnostics panel with field/widge
 
 - No custom application icon — electron-builder uses the default Electron icon. Drop a `build/icon.ico` (256×256, multi-resolution) to fix.
 - Releases are unsigned (placeholder signtool only); first-run SmartScreen prompt is expected. Real signing would need an EV / OV code-signing cert.
-- DDB JSON import (paste/file) fills only header fields + ability scores; doesn't pull weapons/spells from inventory or spell sources
 - Single-character only (no vault/picker)
 - Auto-derived save/skill mods from ability scores not implemented (manual entry only)
 - Main JS chunk is ~660KB (Vite warned >500KB) because pdfjs-dist is loaded synchronously; could be code-split via dynamic import

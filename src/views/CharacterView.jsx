@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import { SAVE_DEFS, SKILL_DEFS } from '../state.js';
 import { Checkbox, FieldLabel, SectionCard } from '../components.jsx';
-import { importDdbText, mapDdbJson } from '../ddbImport.js';
 import { importDdbPdfFile } from '../ddbPdfImport.js';
 
 const SLOT_LEVELS = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9];
@@ -501,8 +500,6 @@ function GearIcon({ size = 12 }) {
 }
 
 function DdbImport({ setCharacter }) {
-  const [source,      setSource]      = useState('jsonPaste');
-  const [text,        setText]        = useState('');
   const [pdfFile,     setPdfFile]     = useState(null);
   const [busy,        setBusy]        = useState(false);
   const [status,      setStatus]      = useState(null);
@@ -529,32 +526,6 @@ function DdbImport({ setCharacter }) {
   const reportSuccess = (patch, extra = '') => {
     const fields = Object.keys(patch).filter(k => patch[k] !== undefined);
     setStatus({ ok: true, msg: `imported${extra}: ${fields.join(', ')}` });
-  };
-
-  const importPasted = () => {
-    try {
-      const patch = importDdbText(text);
-      applyPatch(patch);
-      reportSuccess(patch);
-    } catch (e) {
-      setStatus({ ok: false, msg: e.message });
-    }
-  };
-
-  const importJsonFile = async (file) => {
-    setBusy(true);
-    setStatus(null);
-    try {
-      const text = await file.text();
-      const parsed = JSON.parse(text);
-      const patch = mapDdbJson(parsed);
-      applyPatch(patch);
-      reportSuccess(patch, ` from ${file.name}`);
-    } catch (e) {
-      setStatus({ ok: false, msg: e.message });
-    } finally {
-      setBusy(false);
-    }
   };
 
   const importPdfFile = async () => {
@@ -592,81 +563,39 @@ function DdbImport({ setCharacter }) {
   };
 
   return (
-    <SectionCard title="import from D&D Beyond"
-      right={
-        <select className="lined" value={source}
-                onChange={e => { setSource(e.target.value); setStatus(null); }}>
-          <option value="jsonPaste">JSON · paste</option>
-          <option value="jsonFile">JSON · file</option>
-          <option value="pdfFile">PDF · file</option>
-        </select>
-      }>
-
-      {source === 'jsonPaste' && (
-        <>
-          <div className="text-xs text-fade italic mb-2">
-            paste the response from <span className="font-cmd text-gold">character-service.dndbeyond.com/character/v5/character/&lt;id&gt;</span>
-          </div>
-          <textarea className="lined" rows="5"
-                    placeholder='{"data": {...}}'
-                    value={text}
-                    onChange={e => setText(e.target.value)} />
-          <div className="flex items-center gap-3 mt-2">
-            <button onClick={importPasted}
-                    className="text-xs font-cmd uppercase tracking-wider text-gold border border-gold px-3 py-1.5 hover:bg-active transition">
-              ↓ import
+    <SectionCard title="import from D&D Beyond">
+      <div className="text-xs text-fade italic mb-2">
+        DDB retired their JSON character export, so PDF is the only supported path now.
+        select a D&amp;D Beyond character-sheet <span className="font-cmd text-gold">.pdf</span> export — best-effort field extraction.
+        importing will overwrite character info (ability scores, HP, AC, etc.) — modifiers are left alone.
+      </div>
+      <div className="flex items-center gap-3 flex-wrap">
+        <FilePicker accept="application/pdf,.pdf"
+                    busy={busy}
+                    label={pdfFile ? '↻ choose different file' : '↓ choose file'}
+                    onFile={(f) => { setPdfFile(f); setStatus(null); }} />
+        {pdfFile && (
+          <>
+            <span className="text-xs font-cmd text-parchment truncate max-w-xs" title={pdfFile.name}>
+              {pdfFile.name}
+            </span>
+            <button onClick={importPdfFile}
+                    disabled={busy}
+                    className="text-xs font-cmd uppercase tracking-wider text-gold border border-gold-strong px-3 py-1.5 hover:bg-active transition disabled:opacity-50">
+              {busy ? '… importing' : '↓ import & overwrite'}
             </button>
-            <ImportStatus status={status} />
-          </div>
-        </>
-      )}
-
-      {source === 'jsonFile' && (
-        <>
-          <div className="text-xs text-fade italic mb-2">
-            select a saved <span className="font-cmd text-gold">.json</span> dump of the DDB character endpoint
-          </div>
-          <FilePicker accept=".json,application/json"
-                      busy={busy} onFile={importJsonFile} />
-          <ImportStatus status={status} className="mt-2" />
-        </>
-      )}
-
-      {source === 'pdfFile' && (
-        <>
-          <div className="text-xs text-fade italic mb-2">
-            select a D&amp;D Beyond character-sheet <span className="font-cmd text-gold">.pdf</span> export — best-effort field extraction.
-            importing will overwrite character info (ability scores, HP, AC, etc.) — modifiers are left alone.
-          </div>
-          <div className="flex items-center gap-3 flex-wrap">
-            <FilePicker accept="application/pdf,.pdf"
-                        busy={busy}
-                        label={pdfFile ? '↻ choose different file' : '↓ choose file'}
-                        onFile={(f) => { setPdfFile(f); setStatus(null); }} />
-            {pdfFile && (
-              <>
-                <span className="text-xs font-cmd text-parchment truncate max-w-xs" title={pdfFile.name}>
-                  {pdfFile.name}
-                </span>
-                <button onClick={importPdfFile}
-                        disabled={busy}
-                        className="text-xs font-cmd uppercase tracking-wider text-gold border border-gold-strong px-3 py-1.5 hover:bg-active transition disabled:opacity-50">
-                  {busy ? '… importing' : '↓ import & overwrite'}
-                </button>
-                <button onClick={() => { setPdfFile(null); setStatus(null); }}
-                        disabled={busy}
-                        className="text-xs font-cmd uppercase tracking-wider text-fade hover:text-crimson disabled:opacity-50">
-                  ✕ cancel
-                </button>
-              </>
-            )}
-          </div>
-          <ImportStatus status={status} className="mt-2 block" />
-        </>
-      )}
+            <button onClick={() => { setPdfFile(null); setStatus(null); }}
+                    disabled={busy}
+                    className="text-xs font-cmd uppercase tracking-wider text-fade hover:text-crimson disabled:opacity-50">
+              ✕ cancel
+            </button>
+          </>
+        )}
+      </div>
+      <ImportStatus status={status} className="mt-2 block" />
 
       <div className="text-xs text-fade italic mt-3 pt-2 border-t border-gold">
-        currently fills: name · race · class · level · prof bonus · AC · max HP · ability scores. attacks &amp; spells stay manual.
+        fills: identity (name · race · class · level) · combat (HP · AC · prof bonus) · ability scores · saves · skills · attacks · spells · spell slots. modifiers stay manual.
       </div>
 
       {diagnostics && (
