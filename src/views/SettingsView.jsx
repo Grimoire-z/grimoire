@@ -39,7 +39,45 @@ export default function SettingsView({ settings, setSettings, state, replaceStat
           ))}
         </div>
       </SectionCard>
+
+      <CreditsSection />
     </main>
+  );
+}
+
+// ─── Credits ──────────────────────────────────────────────────────────────
+// Attribution for assets that aren't ours. External links go through the
+// main-process shell.openExternal IPC bridge (same one Updates uses for
+// the "open releases page" button) so the URL opens in the user's actual
+// browser instead of inside the Electron renderer.
+
+function CreditsSection() {
+  const openLink = (e, url) => {
+    e.preventDefault();
+    if (bridge?.openExternal) bridge.openExternal(url);
+  };
+  return (
+    <SectionCard title="Credits">
+      <p className="text-fade text-sm italic mb-3">
+        Assets and contributions used in Grimoire that aren't ours.
+      </p>
+      <ul className="text-sm space-y-1.5">
+        <li className="flex items-baseline gap-2">
+          <span className="text-fade font-cmd text-xs uppercase tracking-wider w-20 flex-shrink-0">App icon</span>
+          <span className="text-parchment">
+            Photograph of a totally-eclipsed (“blood”) moon by{' '}
+            <a
+              href="https://x.com/AJamesMcCarthy"
+              onClick={e => openLink(e, 'https://x.com/AJamesMcCarthy')}
+              className="text-gold hover:text-parchment underline decoration-dotted underline-offset-2 transition cursor-pointer"
+            >
+              Andrew McCarthy (@AJamesMcCarthy)
+            </a>
+            {' '}— used with thanks. Cropped + downscaled to multi-resolution ICO for the desktop build.
+          </span>
+        </li>
+      </ul>
+    </SectionCard>
   );
 }
 

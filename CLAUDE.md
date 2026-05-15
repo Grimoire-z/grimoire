@@ -35,7 +35,7 @@ This file is the source of truth for project memory. It's committed to the repo 
 - `src/views/CharacterView.jsx` — Roll20-style sheet editor (identity, combat, abilities, saves, skills, attacks, spells, DDB import)
 - `src/views/ModifierForgeView.jsx` — modifier library editor
 - `src/views/TargetsView.jsx` — target book; folders + targets
-- `src/views/SettingsView.jsx` — full-page settings (theme + font preset chooser + Updates panel); reached via the d20 button in the header
+- `src/views/SettingsView.jsx` — full-page settings (Updates + Backup & Restore + Theme + Fonts + Credits); reached via the d20 button in the header
 - `src/index.css` — Google Fonts + Tailwind import + custom theme classes
 - `scripts/inspect-pdf.mjs`, `scripts/test-mapper.mjs` — offline diagnostic tools for tuning the PDF importer; useful when DDB shifts the layout
 
@@ -76,6 +76,13 @@ This file is the source of truth for project memory. It's committed to the repo 
 - `parseImport` validates: valid JSON, top-level object, schemaVersion matches `SCHEMA_VERSION`, and a `character` object exists. Anything else (newer schema, garbage file, missing character) throws a typed error message that surfaces in the UI status line.
 - The bulk-replace is wired through `replaceState(next)` in `App.jsx` — it splats each slice into its useState setter, so the persist `useEffect` fires once afterward and the new state lands in localStorage too.
 - This is the **manual** sync option — the user moves the file across devices via whatever cloud storage they already use (Dropbox, OneDrive, etc.). Cloud-folder / gist-based automatic sync was discussed but deferred; either could layer on top of the same `downloadExport`/`parseImport` helpers without re-architecting.
+
+### App icon + Credits (v0.6+)
+
+- The app icon at `build/icon.ico` is a multi-resolution ICO (16 / 32 / 48 / 256) embedded with the Microsoft-recommended Windows icon set. electron-builder picks it up automatically — if it's missing the build log will say `default Electron icon is used  reason=application icon is not set`. **That warning being gone from the build log is the canonical confirmation the icon was embedded.**
+- The icon source is a "blood moon" photograph by Andrew McCarthy (@AJamesMcCarthy on X), used with credit. The original is ~6391×4939; it was center-cropped to a 4939×4939 square (the moon is roughly centered horizontally) and resampled to the four target sizes, then packed via `npx png-to-ico` into the multi-res ICO. The build process is one-off / regeneration-only — `build/icon.ico` is committed to the repo and won't be rebuilt unless someone wants to swap the source. Don't commit the intermediate PNGs.
+- **PowerShell binary-redirect gotcha:** `npx png-to-ico ... > icon.ico` from PowerShell corrupts the binary with a UTF-16 BOM (PS encodes stdout as UTF-16 text by default). Use `cmd /c "npx png-to-ico ... > icon.ico"` instead — cmd does raw byte redirect. Verify with `[BitConverter]::ToString($bytes[0..3])` — a valid ICO starts with `00-00-01-00`.
+- `SettingsView.jsx` includes a **Credits** section that surfaces attribution for non-original assets. Links go through the existing `window.grimoire.openExternal` preload bridge (the same one Updates uses for the "open releases page" button) so they open in the user's default browser rather than inside the Electron renderer. The handler defensively no-ops if the bridge isn't present (e.g., when the renderer is loaded outside Electron during preview-tool verification).
 
 ### Updates (v0.5+)
 
@@ -118,7 +125,6 @@ The Character view's PDF import section has a diagnostics panel with field/widge
 
 ## Open work / known stubs
 
-- No custom application icon — electron-builder uses the default Electron icon. Drop a `build/icon.ico` (256×256, multi-resolution) to fix.
 - Releases are unsigned (placeholder signtool only); first-run SmartScreen prompt is expected. Real signing would need an EV / OV code-signing cert.
 - Single-character only (no vault/picker)
 - Cross-device sync is manual (Settings → Backup & Restore). Automatic options (cloud-folder watcher, gist-based) were discussed but not built — could layer on top of the existing `downloadExport`/`parseImport` helpers without rework.
