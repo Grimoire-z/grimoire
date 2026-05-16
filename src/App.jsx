@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo, useCallback } from 'react';
 import {
   DEFAULT_SETTINGS, DEFAULT_MODIFIERS,
   loadState, saveState, defaultVault,
+  makeCharacterId, makeBlankCharacter,
 } from './state.js';
 import RollView from './views/RollView.jsx';
 import ModifierForgeView from './views/ModifierForgeView.jsx';
@@ -123,8 +124,55 @@ export default function App() {
     return character.id;
   };
 
-  // Slice 1 only needs read/enter on the vault. CRUD (duplicate, rename,
-  // delete) lands in slice 2; for now VaultView gets a no-op for those.
+  // Rename a character — display-only field; id stays stable.
+  const renameCharacter = (id, name) => {
+    setCharacters(cs => {
+      if (!cs[id]) return cs;
+      return { ...cs, [id]: { ...cs[id], name } };
+    });
+  };
+
+  // Duplicate: deep-clone via JSON, fresh id, "<name> (copy)" name.
+  // The source's portrait and modifiers come along so duplicates are
+  // genuine spares, not blanks.
+  const duplicateCharacter = (id) => {
+    const src = characters[id];
+    if (!src) return null;
+    const clone = JSON.parse(JSON.stringify(src));
+    clone.id = makeCharacterId();
+    clone.name = `${src.name || 'Character'} (copy)`;
+    setCharacters(cs => ({ ...cs, [clone.id]: clone }));
+    return clone.id;
+  };
+
+  // Delete with two safeguards: if the active character is being deleted,
+  // swap activeCharacterId to a surviving sibling first; if the deletion
+  // would empty the vault, auto-create a blank so the views never face
+  // an empty `characters` map.
+  //
+  // We deliberately don't nest `setActiveCharacterId` inside a
+  // `setCharacters` updater here: StrictMode double-invokes updaters in
+  // dev, and `makeBlankCharacter` produces a fresh random id each call —
+  // the two invocations would write different ids to `characters` vs.
+  // `activeCharacterId`. Computing the next vault outside the setter and
+  // making both state calls from the same event handler keeps them
+  // batched into a single, consistent render.
+  const deleteCharacter = (id) => {
+    if (!characters[id]) return;
+    const next = { ...characters };
+    delete next[id];
+    if (Object.keys(next).length === 0) {
+      const fallback = makeBlankCharacter('Default Character');
+      next[fallback.id] = fallback;
+      setCharacters(next);
+      setActiveCharacterId(fallback.id);
+      return;
+    }
+    setCharacters(next);
+    if (id === activeCharacterId) {
+      setActiveCharacterId(Object.keys(next)[0]);
+    }
+  };
 
   // Force per-character-private views to remount on character switch so any
   // view-internal useState resets without us having to lift it up.
@@ -142,6 +190,9 @@ export default function App() {
           activeCharacterId={activeCharacterId}
           onEnter={enterCharacter}
           onAdd={addCharacter}
+          onRename={renameCharacter}
+          onDuplicate={duplicateCharacter}
+          onDelete={deleteCharacter}
         />
       )}
       {mode === 'roll' && activeCharacter && (
