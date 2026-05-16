@@ -1,16 +1,47 @@
-import { useState } from 'react';
+// Modifier forge — edits both the active character's private modifier
+// library and the global library that's shared across all characters.
+// A modifier lives in exactly one of the two lists; the editor's "Global"
+// checkbox moves a modifier between them. The library list shows both
+// stacks together with a CHAR / GLOBAL tag per row so it's obvious at a
+// glance which is which.
+//
+// New modifiers default to character-private — the global library is
+// reserved for things you actually want shared across every character
+// (Advantage, Disadvantage, Bardic Inspiration, Bless by default).
+
+import { useMemo, useState } from 'react';
 import { composeFromMod } from '../composer.js';
 import { APPLIES_KINDS, EFFECT_LABELS, EFFECT_PLACEHOLDERS, EFFECT_HAS_VALUE } from '../state.js';
 import { Checkbox } from '../components.jsx';
 
-export default function ModifierForgeView({ modifiers, setModifiers, activeMods, setActiveMods }) {
-  const [selectedId, setSelectedId] = useState(modifiers[0]?.id || null);
-  const selected = modifiers.find(m => m.id === selectedId);
+export default function ModifierForgeView({
+  characterModifiers, setCharacterModifiers,
+  globalModifiers,    setGlobalModifiers,
+  activeMods, setActiveMods,
+}) {
+  // Tag each mod with its scope and merge for display. Character first so
+  // the library list groups visually by scope when scrolled.
+  const tagged = useMemo(() => ([
+    ...characterModifiers.map(m => ({ mod: m, scope: 'character' })),
+    ...globalModifiers.map(m => ({ mod: m, scope: 'global' })),
+  ]), [characterModifiers, globalModifiers]);
 
+  const allMods = useMemo(() => tagged.map(t => t.mod), [tagged]);
+
+  const [selectedId, setSelectedId] = useState(tagged[0]?.mod.id || null);
+  const selectedEntry = tagged.find(t => t.mod.id === selectedId) || null;
+  const selected      = selectedEntry?.mod || null;
+  const selectedScope = selectedEntry?.scope || null;
+
+  // Apply a patch to whichever list owns the selected modifier.
   const update = (patch) => {
-    setModifiers(prev => prev.map(m => m.id === selectedId ? { ...m, ...patch } : m));
+    if (!selected) return;
+    const setter = selectedScope === 'character' ? setCharacterModifiers : setGlobalModifiers;
+    setter(prev => prev.map(m => m.id === selectedId ? { ...m, ...patch } : m));
   };
 
+  // New mods always start character-private. Promote via the editor's
+  // Global toggle if you want to share across characters.
   const newModifier = () => {
     const id = `mod_${Date.now().toString(36)}`;
     const fresh = {
@@ -19,31 +50,51 @@ export default function ModifierForgeView({ modifiers, setModifiers, activeMods,
       effects: [{ type: 'bonus', value: '' }],
       params: [],
     };
-    setModifiers(prev => [...prev, fresh]);
+    setCharacterModifiers(prev => [...prev, fresh]);
     setSelectedId(id);
   };
 
+  // Delete from the owning list; clear from activeMods so the Roll view
+  // doesn't keep a phantom toggle.
   const deleteSelected = () => {
     if (!selected) return;
     if (!window.confirm(`Delete "${selected.name}"?\n\nThis cannot be undone.`)) return;
-    setModifiers(prev => prev.filter(m => m.id !== selectedId));
+    const setter = selectedScope === 'character' ? setCharacterModifiers : setGlobalModifiers;
+    setter(prev => prev.filter(m => m.id !== selectedId));
     setActiveMods(prev => {
       const next = { ...prev };
       delete next[selectedId];
       return next;
     });
-    const remaining = modifiers.filter(m => m.id !== selectedId);
-    setSelectedId(remaining[0]?.id || null);
+    // Pick the next entry in whatever's left of the same scope, else any.
+    const survivors = tagged.filter(t => t.mod.id !== selectedId);
+    setSelectedId(survivors[0]?.mod.id || null);
   };
 
+  // Duplicate stays in the same scope as the source.
   const duplicateSelected = () => {
     if (!selected) return;
     const id = `mod_${Date.now().toString(36)}`;
     const copy = JSON.parse(JSON.stringify(selected));
     copy.id = id;
     copy.name = `${selected.name} (copy)`;
-    setModifiers(prev => [...prev, copy]);
+    const setter = selectedScope === 'character' ? setCharacterModifiers : setGlobalModifiers;
+    setter(prev => [...prev, copy]);
     setSelectedId(id);
+  };
+
+  // Move the selected modifier between character.modifiers and
+  // globalModifiers. Preserves the id, which means any active-mods toggle
+  // and any references in other mods' `excludes` lists keep working.
+  const toggleScope = () => {
+    if (!selected) return;
+    if (selectedScope === 'character') {
+      setCharacterModifiers(prev => prev.filter(m => m.id !== selectedId));
+      setGlobalModifiers(prev => [...prev, selected]);
+    } else {
+      setGlobalModifiers(prev => prev.filter(m => m.id !== selectedId));
+      setCharacterModifiers(prev => [...prev, selected]);
+    }
   };
 
   return (
@@ -53,36 +104,17 @@ export default function ModifierForgeView({ modifiers, setModifiers, activeMods,
         <div className="flex items-baseline justify-between mb-2">
           <h2 className="font-display text-gold text-sm">LIBRARY</h2>
           <button onClick={newModifier}
-                  className="text-xs font-cmd uppercase tracking-wider text-gold border border-gold px-2 py-1 hover:bg-active transition">
+                  className="text-xs font-cmd uppercase tracking-wider text-gold border border-gold px-2 py-1 hover:bg-active transition"
+                  title="creates a character-private modifier — promote via the Global toggle in the editor">
             + new
           </button>
         </div>
         <div className="divider mb-3" />
-        <div className="space-y-2">
-          {modifiers.map(m => (
-            <button key={m.id} onClick={() => setSelectedId(m.id)}
-              className={`w-full text-left border rounded-sm p-2.5 transition ${
-                selectedId === m.id
-                  ? 'bg-active border-gold-strong glow-active'
-                  : 'bg-card border-gold hover:bg-card-hover'
-              }`}>
-              <div className="flex justify-between items-baseline gap-2">
-                <span className={`font-display text-sm uppercase tracking-wide ${
-                  selectedId === m.id ? 'text-gold' : 'text-parchment'
-                }`}>{m.name}</span>
-                <span className="text-xs text-fade font-cmd flex-shrink-0">
-                  {m.applies.map(a => a[0]).join('').toUpperCase()}
-                </span>
-              </div>
-              <div className="text-xs text-fade italic truncate mt-0.5">{m.sub || <em>no description</em>}</div>
-            </button>
-          ))}
-          {modifiers.length === 0 && (
-            <div className="text-fade italic text-sm text-center py-8">
-              empty — click <span className="text-gold">+ new</span> to forge one
-            </div>
-          )}
-        </div>
+        <ScopeGroup label="This character" entries={tagged.filter(t => t.scope === 'character')}
+                    selectedId={selectedId} onSelect={setSelectedId} emptyHint="no per-character modifiers yet" />
+        <div className="mt-4" />
+        <ScopeGroup label="Global" entries={tagged.filter(t => t.scope === 'global')}
+                    selectedId={selectedId} onSelect={setSelectedId} emptyHint="no global modifiers" />
       </section>
 
       <section className="lg:col-span-3">
@@ -93,8 +125,10 @@ export default function ModifierForgeView({ modifiers, setModifiers, activeMods,
         ) : (
           <ModifierEditor
             mod={selected}
-            allMods={modifiers}
+            scope={selectedScope}
+            allMods={allMods}
             update={update}
+            onToggleScope={toggleScope}
             onDelete={deleteSelected}
             onDuplicate={duplicateSelected}
           />
@@ -104,7 +138,51 @@ export default function ModifierForgeView({ modifiers, setModifiers, activeMods,
   );
 }
 
-function ModifierEditor({ mod, allMods, update, onDelete, onDuplicate }) {
+function ScopeGroup({ label, entries, selectedId, onSelect, emptyHint }) {
+  return (
+    <>
+      <div className="flex items-baseline justify-between mb-2">
+        <h3 className="font-display text-xs text-fade uppercase tracking-wider">{label}</h3>
+        <span className="text-fade text-[10px] font-cmd">{entries.length}</span>
+      </div>
+      <div className="space-y-2">
+        {entries.length === 0 && (
+          <div className="text-fade italic text-xs text-center py-2 border border-dashed border-gold rounded-sm">
+            {emptyHint}
+          </div>
+        )}
+        {entries.map(({ mod }) => (
+          <ModifierRow key={mod.id} mod={mod}
+            active={selectedId === mod.id}
+            onSelect={() => onSelect(mod.id)} />
+        ))}
+      </div>
+    </>
+  );
+}
+
+function ModifierRow({ mod, active, onSelect }) {
+  return (
+    <button onClick={onSelect}
+      className={`w-full text-left border rounded-sm p-2.5 transition ${
+        active
+          ? 'bg-active border-gold-strong glow-active'
+          : 'bg-card border-gold hover:bg-card-hover'
+      }`}>
+      <div className="flex justify-between items-baseline gap-2">
+        <span className={`font-display text-sm uppercase tracking-wide ${active ? 'text-gold' : 'text-parchment'}`}>
+          {mod.name}
+        </span>
+        <span className="text-xs text-fade font-cmd flex-shrink-0">
+          {mod.applies.map(a => a[0]).join('').toUpperCase()}
+        </span>
+      </div>
+      <div className="text-xs text-fade italic truncate mt-0.5">{mod.sub || <em>no description</em>}</div>
+    </button>
+  );
+}
+
+function ModifierEditor({ mod, scope, allMods, update, onToggleScope, onDelete, onDuplicate }) {
   const toggleApplies = (kind) => {
     const next = mod.applies.includes(kind)
       ? mod.applies.filter(k => k !== kind)
@@ -147,6 +225,7 @@ function ModifierEditor({ mod, allMods, update, onDelete, onDuplicate }) {
   };
 
   const previewArgs = composeFromMod(mod, {});
+  const isGlobal = scope === 'global';
 
   return (
     <div className="space-y-5">
@@ -162,6 +241,17 @@ function ModifierEditor({ mod, allMods, update, onDelete, onDuplicate }) {
             <input className="lined" value={mod.sub}
                    onChange={e => update({ sub: e.target.value })}
                    placeholder="e.g. +1d4 to attacks · concentration" />
+          </div>
+          <div className="flex items-center justify-between gap-3 mt-1 pt-3 border-t border-gold">
+            <div className="min-w-0">
+              <div className="text-fade text-xs uppercase tracking-wider">Scope</div>
+              <div className="text-xs text-fade italic">
+                {isGlobal
+                  ? 'shared across every character'
+                  : 'only available to this character'}
+              </div>
+            </div>
+            <Checkbox label="Global" checked={isGlobal} onChange={onToggleScope} compact />
           </div>
         </div>
       </div>
@@ -330,9 +420,9 @@ function ParameterEditor({ param, onChange, onDelete }) {
               className={`w-4 h-4 rounded-full border flex items-center justify-center flex-shrink-0 transition ${
                 param.defaultIndex === i ? 'border-gold-strong' : 'border-gold'
               }`}
-              style={param.defaultIndex === i ? { backgroundColor: '#d4a644' } : {}}
+              style={param.defaultIndex === i ? { backgroundColor: 'var(--color-gold)' } : {}}
               title="mark as default">
-              {param.defaultIndex === i && <span className="block w-1.5 h-1.5 rounded-full" style={{ backgroundColor: '#14100c' }} />}
+              {param.defaultIndex === i && <span className="block w-1.5 h-1.5 rounded-full" style={{ backgroundColor: 'var(--color-bg)' }} />}
             </button>
             <input className="lined flex-1" value={opt.label} placeholder="label (e.g. Lvl 1)"
                    onChange={e => updateOption(i, { label: e.target.value })} />

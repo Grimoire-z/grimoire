@@ -21,7 +21,7 @@ import { PortraitDisplay } from '../components.jsx';
 
 export default function VaultView({
   characters, activeCharacterId,
-  onEnter, onAdd, onRename, onDuplicate, onDelete,
+  onEnter, onAdd, onAddAndEnter, onRename, onDuplicate, onDelete,
 }) {
   // Sort by name for stable display; "recently active" sort would need
   // an updatedAt per character — punt to a later polish.
@@ -32,10 +32,11 @@ export default function VaultView({
 
   // Slice-5 replaces this with a method picker (PDF / Start blank).
   // For now the empty card always adds a blank character and enters it.
+  // Uses the combined helper so the new id isn't stuck in stale-closure
+  // limbo between `add` and `enter`.
   const onAddBlank = () => {
     const c = makeBlankCharacter('New Character');
-    const id = onAdd(c);
-    if (id) onEnter(id);
+    onAddAndEnter(c);
   };
 
   return (

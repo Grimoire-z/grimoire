@@ -55,6 +55,30 @@ export default function App() {
     });
   }, [activeCharacterId]);
 
+  // Per-character modifier list helpers. Splits scope from globalModifiers
+  // (see CLAUDE.md → Character vault → modifier scopes). The merged list
+  // is what RollView consumes; ModifierForge takes both lists individually
+  // so it can route edits to the right place and surface the Global toggle.
+  const characterModifiers = activeCharacter?.modifiers || [];
+
+  const setCharacterModifiers = useCallback((updater) => {
+    setActiveCharacter(cur => {
+      const nextList = typeof updater === 'function' ? updater(cur.modifiers || []) : updater;
+      return { ...cur, modifiers: nextList };
+    });
+  }, [setActiveCharacter]);
+
+  // Roll-view modifier source: character-private first so id collisions
+  // (rare but possible — a user could promote/demote a mod whose id
+  // matches one in the other list) resolve character-wins.
+  const mergedModifiers = useMemo(() => {
+    const seen = new Set();
+    const out = [];
+    for (const m of characterModifiers) { if (!seen.has(m.id)) { seen.add(m.id); out.push(m); } }
+    for (const m of globalModifiers)    { if (!seen.has(m.id)) { seen.add(m.id); out.push(m); } }
+    return out;
+  }, [characterModifiers, globalModifiers]);
+
   // Ephemeral roll-view state — not persisted, reset on character switch.
   const [tab,             setTab]             = useState('attacks');
   const [activeMods,      setActiveMods]      = useState({});
@@ -124,6 +148,19 @@ export default function App() {
     return character.id;
   };
 
+  // Add and immediately enter — the common "create blank / import"
+  // path. Doing this as a single function avoids the stale-closure trap
+  // in `enterCharacter`'s existence check: a freshly-added character
+  // isn't visible in the `characters` closure of the same render, so a
+  // naive `addCharacter(); enterCharacter(id);` sequence would silently
+  // no-op. Writing the three setters together batches them into one
+  // render and sidesteps the check entirely.
+  const addAndEnterCharacter = (character) => {
+    setCharacters(cs => ({ ...cs, [character.id]: character }));
+    setActiveCharacterId(character.id);
+    setMode('roll');
+  };
+
   // Rename a character — display-only field; id stays stable.
   const renameCharacter = (id, name) => {
     setCharacters(cs => {
@@ -190,6 +227,7 @@ export default function App() {
           activeCharacterId={activeCharacterId}
           onEnter={enterCharacter}
           onAdd={addCharacter}
+          onAddAndEnter={addAndEnterCharacter}
           onRename={renameCharacter}
           onDuplicate={duplicateCharacter}
           onDelete={deleteCharacter}
@@ -199,7 +237,7 @@ export default function App() {
         <RollView
           key={charKey}
           character={activeCharacter}
-          modifiers={globalModifiers}
+          modifiers={mergedModifiers}
           targets={targets} folders={folders}
           selectedTargets={selectedTargets} setSelectedTargets={setSelectedTargets}
           settings={settings} setSettings={setSettings}
@@ -229,7 +267,8 @@ export default function App() {
       {mode === 'modifiers' && (
         <ModifierForgeView
           key={charKey}
-          modifiers={globalModifiers} setModifiers={setGlobalModifiers}
+          characterModifiers={characterModifiers} setCharacterModifiers={setCharacterModifiers}
+          globalModifiers={globalModifiers} setGlobalModifiers={setGlobalModifiers}
           activeMods={activeMods} setActiveMods={setActiveMods}
         />
       )}
