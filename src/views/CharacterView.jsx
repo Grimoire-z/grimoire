@@ -1,6 +1,6 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { SAVE_DEFS, SKILL_DEFS } from '../state.js';
-import { Checkbox, FieldLabel, SectionCard } from '../components.jsx';
+import { Checkbox, FieldLabel, SectionCard, PortraitDisplay, fileToPortraitDataUrl } from '../components.jsx';
 import { importDdbPdfFile } from '../ddbPdfImport.js';
 
 const SLOT_LEVELS = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9];
@@ -45,37 +45,101 @@ export default function CharacterView({ character, setCharacter }) {
 }
 
 function Identity({ character, patch }) {
+  const setPortrait = (dataUrl) => patch({ portrait: dataUrl });
   return (
     <SectionCard title="identity">
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        <div>
-          <FieldLabel>Name</FieldLabel>
-          <input className="lined" value={character.name}
-                 onChange={e => patch({ name: e.target.value })} />
-        </div>
-        <div>
-          <FieldLabel>Pronouns</FieldLabel>
-          <input className="lined" value={character.pronouns || ''}
-                 onChange={e => patch({ pronouns: e.target.value })} />
-        </div>
-        <div>
-          <FieldLabel>Ancestry / Race</FieldLabel>
-          <input className="lined" value={character.ancestry || ''}
-                 onChange={e => patch({ ancestry: e.target.value })} />
-        </div>
-        <div>
-          <FieldLabel>Class</FieldLabel>
-          <input className="lined" value={character.klass || ''}
-                 onChange={e => patch({ klass: e.target.value })} />
-        </div>
-        <div>
-          <FieldLabel>Level</FieldLabel>
-          <input className="lined" type="number" min="1" max="20"
-                 value={character.level}
-                 onChange={e => patch({ level: Number(e.target.value) || 1 })} />
+      <div className="flex gap-4 items-start">
+        <PortraitField portrait={character.portrait} setPortrait={setPortrait} />
+        <div className="flex-1 min-w-0 grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div>
+            <FieldLabel>Name</FieldLabel>
+            <input className="lined" value={character.name}
+                   onChange={e => patch({ name: e.target.value })} />
+          </div>
+          <div>
+            <FieldLabel>Pronouns</FieldLabel>
+            <input className="lined" value={character.pronouns || ''}
+                   onChange={e => patch({ pronouns: e.target.value })} />
+          </div>
+          <div>
+            <FieldLabel>Ancestry / Race</FieldLabel>
+            <input className="lined" value={character.ancestry || ''}
+                   onChange={e => patch({ ancestry: e.target.value })} />
+          </div>
+          <div>
+            <FieldLabel>Class</FieldLabel>
+            <input className="lined" value={character.klass || ''}
+                   onChange={e => patch({ klass: e.target.value })} />
+          </div>
+          <div>
+            <FieldLabel>Level</FieldLabel>
+            <input className="lined" type="number" min="1" max="20"
+                   value={character.level}
+                   onChange={e => patch({ level: Number(e.target.value) || 1 })} />
+          </div>
         </div>
       </div>
     </SectionCard>
+  );
+}
+
+// Portrait upload field. Uses the canvas-downscale helper to keep stored
+// portraits small (256×256 JPEG, ~15-60KB) so a vault of N characters
+// fits comfortably in localStorage.
+function PortraitField({ portrait, setPortrait }) {
+  const [busy,  setBusy]  = useState(false);
+  const [error, setError] = useState(null);
+  const inputRef = useRef(null);
+
+  const onPick = () => inputRef.current?.click();
+  const onFileChange = async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = ''; // allow re-picking the same file later
+    if (!file) return;
+    setBusy(true); setError(null);
+    try {
+      const dataUrl = await fileToPortraitDataUrl(file);
+      setPortrait(dataUrl);
+    } catch (err) {
+      setError(err.message || String(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="flex-shrink-0 flex flex-col items-center gap-2 w-[120px]">
+      <PortraitDisplay portrait={portrait} size={120} />
+      <button
+        type="button"
+        onClick={onPick}
+        disabled={busy}
+        className="w-full text-xs font-cmd uppercase tracking-wider text-gold border border-gold px-2 py-1 hover:bg-active transition disabled:opacity-50"
+      >
+        {busy ? '… processing' : (portrait ? '↻ Replace' : '↑ Upload')}
+      </button>
+      {portrait && !busy && (
+        <button
+          type="button"
+          onClick={() => setPortrait(null)}
+          className="w-full text-[10px] font-cmd uppercase tracking-wider text-fade hover:text-crimson transition"
+        >
+          ✕ Remove
+        </button>
+      )}
+      <input
+        ref={inputRef}
+        type="file"
+        accept="image/*"
+        className="hidden"
+        onChange={onFileChange}
+      />
+      {error && (
+        <div className="text-crimson text-[10px] text-center italic leading-tight">
+          {error}
+        </div>
+      )}
+    </div>
   );
 }
 

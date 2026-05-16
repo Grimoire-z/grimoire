@@ -17,6 +17,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { makeBlankCharacter } from '../state.js';
+import { PortraitDisplay } from '../components.jsx';
 
 export default function VaultView({
   characters, activeCharacterId,
@@ -97,7 +98,7 @@ function CharacterCard({ character, active, onEnter, onRename, onDuplicate, onRe
         active ? 'border-gold-strong glow-active' : 'border-gold'
       }`}
     >
-      <PortraitPlaceholder />
+      <PortraitDisplay portrait={character.portrait} size={80} />
       <div className="min-w-0 flex-1">
         {renaming ? (
           <RenameInput
@@ -230,26 +231,6 @@ function AddCard({ onAdd }) {
       <div className="text-3xl font-cmd leading-none">+</div>
       <div className="text-xs font-cmd uppercase tracking-wider">Add Character</div>
     </button>
-  );
-}
-
-// Simple silhouette placeholder — a faded bust outline that fits the
-// theme. Replaced in slice 3 with the actual character portrait when one
-// has been uploaded; this placeholder is the fallback otherwise.
-function PortraitPlaceholder() {
-  return (
-    <div
-      className="flex-shrink-0 w-20 h-20 rounded-sm border border-gold flex items-center justify-center"
-      style={{ backgroundColor: 'var(--color-bg)' }}
-      aria-hidden="true"
-    >
-      <svg viewBox="0 0 24 24" width="40" height="40" fill="none"
-           stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"
-           strokeLinejoin="round" className="text-fade">
-        <circle cx="12" cy="8" r="3.6" />
-        <path d="M5 21c0-3.6 3.1-6.4 7-6.4s7 2.8 7 6.4" />
-      </svg>
-    </div>
   );
 }
 

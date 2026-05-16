@@ -10,7 +10,7 @@ import CharacterView from './views/CharacterView.jsx';
 import TargetsView from './views/TargetsView.jsx';
 import SettingsView from './views/SettingsView.jsx';
 import VaultView from './views/VaultView.jsx';
-import { D20Icon } from './components.jsx';
+import { D20Icon, PortraitDisplay } from './components.jsx';
 
 // Modes that require an active character. 'vault' and 'settings' don't —
 // 'vault' is the character picker / launch page, 'settings' is app-wide.
@@ -300,12 +300,15 @@ function Header({ mode, setMode, character }) {
       </div>
       <div className="divider mb-3" />
       {mode === 'roll' && character ? (
-        <div className="flex items-baseline justify-between gap-4 flex-wrap">
-          <div>
-            <div className="font-display text-xl">{character.name || '— unnamed —'}</div>
-            <div className="text-fade text-sm">
-              {[character.ancestry, character.klass, `Level ${character.level}`]
-                .filter(Boolean).join(' · ')}
+        <div className="flex items-center justify-between gap-4 flex-wrap">
+          <div className="flex items-center gap-3 min-w-0">
+            <PortraitDisplay portrait={character.portrait} size={48} />
+            <div className="min-w-0">
+              <div className="font-display text-xl truncate">{character.name || '— unnamed —'}</div>
+              <div className="text-fade text-sm truncate">
+                {[character.ancestry, character.klass, `Level ${character.level}`]
+                  .filter(Boolean).join(' · ')}
+              </div>
             </div>
           </div>
           <div className="text-right text-xs text-fade font-cmd">

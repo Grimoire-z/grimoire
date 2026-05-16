@@ -109,6 +109,80 @@ export function SectionCard({ title, children, right }) {
   );
 }
 
+// Character portrait. Renders the stored data-URL image if present, or
+// a faded bust silhouette as the fallback. Square aspect ratio; `size`
+// is the rendered edge in pixels. Wherever a portrait appears (vault
+// card, Roll-view header, Character-editor identity section) this is
+// the single source of truth — keep the appearance consistent.
+export function PortraitDisplay({ portrait, size = 80, alt = 'character portrait' }) {
+  const px = `${size}px`;
+  if (portrait) {
+    return (
+      <img
+        src={portrait}
+        alt={alt}
+        className="flex-shrink-0 rounded-sm border border-gold object-cover"
+        style={{ width: px, height: px, backgroundColor: 'var(--color-bg)' }}
+      />
+    );
+  }
+  // Inner icon scales with the slot — keep silhouette readable at the
+  // small Roll-header size (≈40px) and pleasant at the Character-editor
+  // size (≈120px).
+  const icon = Math.round(size * 0.5);
+  return (
+    <div
+      className="flex-shrink-0 rounded-sm border border-gold flex items-center justify-center"
+      style={{ width: px, height: px, backgroundColor: 'var(--color-bg)' }}
+      aria-hidden="true"
+    >
+      <svg viewBox="0 0 24 24" width={icon} height={icon} fill="none"
+           stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"
+           strokeLinejoin="round" className="text-fade">
+        <circle cx="12" cy="8" r="3.6" />
+        <path d="M5 21c0-3.6 3.1-6.4 7-6.4s7 2.8 7 6.4" />
+      </svg>
+    </div>
+  );
+}
+
+// Resize an arbitrary user-uploaded image to a square 256×256 base64 JPEG
+// data URL suitable for persisting in localStorage. Center-crops to a
+// square, downscales via canvas, and emits JPEG at q=0.85 — typical
+// output is 15–60KB, well under any localStorage budget. Throws on
+// non-image files or files larger than 10MB raw.
+export async function fileToPortraitDataUrl(file, targetSize = 256, quality = 0.85) {
+  if (!file?.type?.startsWith('image/')) {
+    throw new Error('not an image file');
+  }
+  if (file.size > 10 * 1024 * 1024) {
+    throw new Error(`image is too large (${(file.size / 1024 / 1024).toFixed(1)}MB) — please pick something under 10MB`);
+  }
+  const blobUrl = URL.createObjectURL(file);
+  try {
+    const img = await new Promise((resolve, reject) => {
+      const el = new Image();
+      el.onload  = () => resolve(el);
+      el.onerror = () => reject(new Error('could not decode image'));
+      el.src = blobUrl;
+    });
+    const canvas = document.createElement('canvas');
+    canvas.width  = targetSize;
+    canvas.height = targetSize;
+    const ctx = canvas.getContext('2d');
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+    // Center-crop the source to the largest square that fits.
+    const src = Math.min(img.naturalWidth, img.naturalHeight);
+    const sx  = (img.naturalWidth  - src) / 2;
+    const sy  = (img.naturalHeight - src) / 2;
+    ctx.drawImage(img, sx, sy, src, src, 0, 0, targetSize, targetSize);
+    return canvas.toDataURL('image/jpeg', quality);
+  } finally {
+    URL.revokeObjectURL(blobUrl);
+  }
+}
+
 // d20 silhouette used as the Settings nav button. Sized by the surrounding box.
 export function D20Icon({ size = 18 }) {
   return (
