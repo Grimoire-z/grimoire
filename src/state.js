@@ -147,6 +147,30 @@ export function makeBlankCharacter(name = 'New Character') {
   };
 }
 
+// Apply a partial character patch (as produced by ddbPdfImport.js) over
+// an existing character. Top-level scalars overwrite; sub-objects merge
+// so a partial import doesn't wipe untouched entries; lists & dicts
+// (attacks, spells) are replaced wholesale because import sources
+// represent the full intended state for those fields.
+//
+// Used by:
+//   - CharacterView "Import Character sheet" card: applies patch to the
+//     active character, overwriting fields that came in.
+//   - VaultView empty-card "Import from PDF" flow: applies patch to a
+//     fresh blank character, producing a brand-new vault entry instead
+//     of mutating the active character.
+export function applyCharacterPatch(character, patch) {
+  return {
+    ...character,
+    ...patch,
+    hp:         patch.hp         ? { ...character.hp,         ...patch.hp }         : character.hp,
+    abilities:  patch.abilities  ? { ...character.abilities,  ...patch.abilities }  : character.abilities,
+    saves:      patch.saves      ? { ...character.saves,      ...patch.saves }      : character.saves,
+    skills:     patch.skills     ? { ...character.skills,     ...patch.skills }     : character.skills,
+    spellSlots: patch.spellSlots ? { ...character.spellSlots, ...patch.spellSlots } : character.spellSlots,
+  };
+}
+
 // ─── Default global modifier library ──────────────────────────────────────
 // Seed list for the global modifier library on first launch. Trimmed in v2
 // to four universally-applicable modifiers (the rest were character-specific

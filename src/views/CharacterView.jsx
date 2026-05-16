@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react';
-import { SAVE_DEFS, SKILL_DEFS } from '../state.js';
+import { SAVE_DEFS, SKILL_DEFS, applyCharacterPatch } from '../state.js';
 import { Checkbox, FieldLabel, SectionCard, PortraitDisplay, fileToPortraitDataUrl } from '../components.jsx';
 import { importDdbPdfFile } from '../ddbPdfImport.js';
 
@@ -575,16 +575,11 @@ function DdbImport({ setCharacter }) {
   //   partial import doesn't wipe untouched entries.
   // - Lists/dicts that should fully replace (attacks, spells) are taken
   //   straight from the patch via `...patch`.
+  // Overwrites character fields the import provides; modifiers are
+  // separate state and intentionally untouched. Shared with the vault's
+  // empty-card PDF-create-new flow via applyCharacterPatch in state.js.
   const applyPatch = (patch) => {
-    setCharacter(c => ({
-      ...c,
-      ...patch,
-      hp:         patch.hp         ? { ...c.hp,         ...patch.hp }         : c.hp,
-      abilities:  patch.abilities  ? { ...c.abilities,  ...patch.abilities }  : c.abilities,
-      saves:      patch.saves      ? { ...c.saves,      ...patch.saves }      : c.saves,
-      skills:     patch.skills     ? { ...c.skills,     ...patch.skills }     : c.skills,
-      spellSlots: patch.spellSlots ? { ...c.spellSlots, ...patch.spellSlots } : c.spellSlots,
-    }));
+    setCharacter(c => applyCharacterPatch(c, patch));
   };
 
   const reportSuccess = (patch, extra = '') => {

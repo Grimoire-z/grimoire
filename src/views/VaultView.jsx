@@ -16,8 +16,9 @@
 // import for new characters.
 
 import { useEffect, useRef, useState } from 'react';
-import { makeBlankCharacter } from '../state.js';
+import { makeBlankCharacter, applyCharacterPatch } from '../state.js';
 import { PortraitDisplay } from '../components.jsx';
+import { importDdbPdfFile } from '../ddbPdfImport.js';
 
 export default function VaultView({
   characters, activeCharacterId,
@@ -29,14 +30,30 @@ export default function VaultView({
     .sort((a, b) => (a.name || '').localeCompare(b.name || ''));
 
   const [pendingDelete, setPendingDelete] = useState(null); // character object | null
+  const [picking,       setPicking]       = useState(false); // open the add-method modal
 
-  // Slice-5 replaces this with a method picker (PDF / Start blank).
-  // For now the empty card always adds a blank character and enters it.
-  // Uses the combined helper so the new id isn't stuck in stale-closure
-  // limbo between `add` and `enter`.
-  const onAddBlank = () => {
-    const c = makeBlankCharacter('New Character');
-    onAddAndEnter(c);
+  // "Start blank" branch from the picker — fresh character with a
+  // generic name, immediately entered.
+  const onPickBlank = () => {
+    setPicking(false);
+    onAddAndEnter(makeBlankCharacter('New Character'));
+  };
+
+  // "Import from PDF" branch — run the file through the existing
+  // pdfjs-backed importer, build a fresh blank seeded with the imported
+  // patch, add + enter. Errors propagate up to the modal so they show
+  // inline without closing it.
+  const onPickPdf = async (file) => {
+    const result = await importDdbPdfFile(file);
+    if (!result.found?.length) {
+      throw new Error(
+        `read ${result.itemCount} text items, ${result.fieldCount} populated form fields — but no known mappings matched`
+      );
+    }
+    const name = result.patch?.name || 'Imported Character';
+    const character = applyCharacterPatch(makeBlankCharacter(name), result.patch);
+    setPicking(false);
+    onAddAndEnter(character);
   };
 
   return (
@@ -53,7 +70,7 @@ export default function VaultView({
             onRequestDelete={() => setPendingDelete(c)}
           />
         ))}
-        <AddCard onAdd={onAddBlank} />
+        <AddCard onAdd={() => setPicking(true)} />
       </div>
       {pendingDelete && (
         <ConfirmDeleteModal
@@ -63,6 +80,13 @@ export default function VaultView({
             onDelete(pendingDelete.id);
             setPendingDelete(null);
           }}
+        />
+      )}
+      {picking && (
+        <AddCharacterPicker
+          onCancel={() => setPicking(false)}
+          onBlank={onPickBlank}
+          onPdf={onPickPdf}
         />
       )}
     </main>
@@ -305,6 +329,122 @@ function ConfirmDeleteModal({ character, onCancel, onConfirm }) {
             style={ready ? { backgroundColor: 'var(--color-crimson)', color: 'var(--color-bg)' } : {}}
           >
             ✕ Delete
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Add-character method picker ─────────────────────────────────────────
+// Opens when the "+ Add Character" empty card is clicked. Offers two
+// creation paths today: a blank sheet, or an import-from-PDF flow that
+// runs the file through `importDdbPdfFile` and seeds a fresh character
+// with the resulting patch. Extra import sources can be added as more
+// buttons in this modal later (DDB JSON was removed in v0.5+ — see
+// CLAUDE.md). The CharacterView "Import Character sheet" card is still
+// the way to *overwrite* the active character; this picker is exclusively
+// for *creating* new vault entries.
+//
+// Errors from the PDF importer surface inline so the user can pick a
+// different file without the modal closing. Backdrop click and Escape
+// cancel (but not while a PDF is mid-parse, since we'd leak the work).
+
+function AddCharacterPicker({ onCancel, onBlank, onPdf }) {
+  const [busy,  setBusy]  = useState(false);
+  const [error, setError] = useState(null);
+  const fileRef = useRef(null);
+
+  const onPickFile = () => fileRef.current?.click();
+  const onFile = async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = ''; // allow re-picking the same file after an error
+    if (!file) return;
+    setBusy(true); setError(null);
+    try {
+      await onPdf(file);
+      // onPdf calls onAddAndEnter which switches mode to 'roll' and
+      // unmounts this modal alongside the rest of VaultView — we don't
+      // need to setPicking(false) here, but if the import errors we
+      // stay in the modal so the user can try a different file.
+    } catch (err) {
+      setError(err.message || String(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  useEffect(() => {
+    const onKey = (e) => { if (e.key === 'Escape' && !busy) onCancel(); };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [onCancel, busy]);
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center px-4"
+      style={{ backgroundColor: 'rgba(0, 0, 0, 0.65)' }}
+      onClick={busy ? undefined : onCancel}
+    >
+      <div
+        className="bg-card border border-gold-strong rounded-sm max-w-md w-full p-5"
+        style={{ boxShadow: '0 20px 60px rgba(0,0,0,0.7), 0 0 0 1px rgba(var(--color-gold-rgb), 0.15)' }}
+        onClick={e => e.stopPropagation()}
+      >
+        <h3 className="font-display text-lg text-gold uppercase tracking-wider mb-2">
+          Add character
+        </h3>
+        <p className="text-fade text-sm italic mb-4">
+          How do you want to create this character?
+        </p>
+        <div className="space-y-2 mb-4">
+          <button
+            type="button"
+            onClick={onBlank}
+            disabled={busy}
+            className="btn-action w-full text-left p-3 border rounded-sm transition border-gold bg-grimoire hover:bg-card-hover disabled:opacity-50"
+          >
+            <div className="font-display text-sm text-gold uppercase tracking-wider mb-1">
+              Start blank
+            </div>
+            <div className="text-fade text-xs italic">
+              Fresh sheet — fill in identity, attacks, and spells by hand.
+            </div>
+          </button>
+          <button
+            type="button"
+            onClick={onPickFile}
+            disabled={busy}
+            className="btn-action w-full text-left p-3 border rounded-sm transition border-gold bg-grimoire hover:bg-card-hover disabled:opacity-50"
+          >
+            <div className="font-display text-sm text-gold uppercase tracking-wider mb-1">
+              {busy ? '… importing' : 'Import from PDF'}
+            </div>
+            <div className="text-fade text-xs italic">
+              D&amp;D Beyond character-sheet <span className="font-cmd text-gold">.pdf</span> export — best-effort field extraction.
+            </div>
+          </button>
+          <input
+            ref={fileRef}
+            type="file"
+            accept="application/pdf,.pdf"
+            className="hidden"
+            onChange={onFile}
+          />
+        </div>
+        {error && (
+          <div className="text-crimson text-xs italic mb-4 leading-relaxed">
+            {error}
+          </div>
+        )}
+        <div className="flex justify-end">
+          <button
+            type="button"
+            onClick={onCancel}
+            disabled={busy}
+            className="text-xs font-cmd uppercase tracking-wider text-fade hover:text-parchment border border-gold px-3 py-1.5 hover:bg-active transition disabled:opacity-50"
+          >
+            Cancel
           </button>
         </div>
       </div>
