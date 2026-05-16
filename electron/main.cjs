@@ -158,7 +158,11 @@ ipcMain.handle('check-for-update', async () => {
     const current = app.getVersion();
     const latest = release.tag_name;
     const hasUpdate = isNewer(latest, current);
-    const setupAsset = (release.assets || []).find(a => /Setup .*\.exe$/.test(a.name));
+    // GitHub silently replaces spaces in uploaded asset filenames with dots, so
+    // the .exe we built as "Grimoire Setup 0.7.0.exe" is served as
+    // "Grimoire.Setup.0.7.0.exe" by the API. Match "Setup" with no assumption
+    // about the surrounding separator (space, dot, or none).
+    const setupAsset = (release.assets || []).find(a => /setup/i.test(a.name) && /\.exe$/i.test(a.name));
     return {
       ok: true,
       current,
