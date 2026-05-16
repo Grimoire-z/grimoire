@@ -25,8 +25,8 @@ This file is the source of truth for project memory. It's committed to the repo 
 - `electron/main.cjs` — Electron main process; loads dev URL or `dist/index.html`. Sandbox enabled, devtools open detached in dev
 - `electron/preload.cjs` — exposes `window.grimoire` (platform info)
 - `src/main.jsx` — Vite entry
-- `src/App.jsx` — top-level component: header, mode switching (Roll / Character / Targets / Modifiers / Settings)
-- `src/state.js` — DEFAULT_CHARACTER, DEFAULT_MODIFIERS, DEFAULT_SETTINGS (theme/fontPreset), SAVE_DEFS, SKILL_DEFS, loadState/saveState (localStorage), downloadExport/parseImport (JSON backup & restore)
+- `src/App.jsx` — top-level component: header, vault routing, mode switching (Vault / Roll / Character / Targets / Modifiers / Settings). Holds the `characters` map + `activeCharacterId` and derives `activeCharacter` from them.
+- `src/state.js` — DEFAULT_CHARACTER, DEFAULT_MODIFIERS, DEFAULT_SETTINGS, SAVE_DEFS, SKILL_DEFS, `makeCharacterId`/`makeBlankCharacter`/`defaultVault` (vault helpers), `migrateV1ToV2` (called inside `loadState` and `parseImport`), `loadState`/`saveState`, `downloadExport`/`parseImport`
 - `src/composer.js` — pure command composition (compose, composeFromMod, substituteParams)
 - `src/ddbPdfImport.js` — D&D Beyond fillable PDF importer; uses pdfjs-dist worker via `?worker` Vite import. PDF is the only supported import path (DDB retired their JSON character-service endpoint, so the previous `ddbImport.js` JSON path was removed in v0.5+). pdfjs-dist itself is dynamic-imported via a memoized `loadPdfjs()` helper inside this file — keeps the main bundle ~270KB instead of ~660KB. **Don't re-add a top-level `import * as pdfjs from 'pdfjs-dist'`** or the chunk-split benefit goes away.
 - `src/components.jsx` — shared (Checkbox, TabBar, ActionCard, ModifierRow, FieldLabel, SectionCard, D20Icon)
@@ -36,6 +36,7 @@ This file is the source of truth for project memory. It's committed to the repo 
 - `src/views/ModifierForgeView.jsx` — modifier library editor
 - `src/views/TargetsView.jsx` — target book; folders + targets
 - `src/views/SettingsView.jsx` — full-page settings (Updates + Backup & Restore + Theme + Fonts + Credits); reached via the d20 button in the header
+- `src/views/VaultView.jsx` — launch page; grid of character cards + an "+ add" card. Clicking a card calls `enterCharacter(id)` in `App.jsx`, which sets `activeCharacterId` and routes to Roll. The GRIMOIRE header title is the way back from any mode.
 - `src/index.css` — Google Fonts + Tailwind import + custom theme classes
 - `scripts/inspect-pdf.mjs`, `scripts/test-mapper.mjs` — offline diagnostic tools for tuning the PDF importer; useful when DDB shifts the layout
 
@@ -67,13 +68,36 @@ This file is the source of truth for project memory. It's committed to the repo 
 - New themes should preserve role semantics: `gold` is the primary accent, `crimson` is for danger / low-resource indicators. Shift hue/saturation, don't swap roles.
 - Inline `style={{ backgroundColor: '#d4a644' }}` ad-hoc colors should be `style={{ backgroundColor: 'var(--color-gold)' }}` so theme swaps reach them. The few legacy spots in `components.jsx` (Checkbox/ModifierRow filled checkmark, TabBar underline) have been converted; keep the convention going.
 
+### Character vault (v0.8+)
+
+- The app's launch surface is the **Vault** (`mode = 'vault'`) — a grid of character cards, one per character in `state.characters`. Clicking a card sets `activeCharacterId` and routes to Roll. The `mode` value is session-only (not persisted), so every launch starts at the vault.
+- State shape (schema v2):
+  ```
+  {
+    schemaVersion: 2,
+    characters: { [id]: <character> },     // map keyed by stable 8-char base36 id
+    activeCharacterId: <id>,                // which character drives Roll/Character/Targets/Modifiers
+    globalModifiers: [<mod>],               // shared across all characters
+    targets: [...], folders: [...],         // shared across all characters
+    settings: { theme, fontPreset, … },     // app-wide UI prefs
+  }
+  ```
+  Each character carries `id`, all the existing v1 character fields, plus `portrait` (base64 data URL or `null`) and `modifiers` (per-character mod list — empty by default; slice 4 wires the merge).
+- **Per-character vs global slices:** character sheet, attacks, spells, slot counts, per-character modifiers, portrait → **per-character**. Targets, folders, global modifiers, settings → **global** (shared across all characters). Roll-view ephemeral state (active mods, composed cmd, history, etc.) resets on character switch — switching is "I just opened the app as character X", not "resume mid-roll".
+- **Reset-on-switch mechanic**: an effect in `App.jsx` keyed on `activeCharacterId` clears the Roll ephemerals. Per-view internal state (e.g., the Spells accordion's per-row expansion) is reset by re-mounting RollView/CharacterView/ModifierForgeView with `key={activeCharacterId}`.
+- **Header behavior**: the `GRIMOIRE` title is a clickable back-to-vault button (every mode, even within the vault — clicking does nothing harmful there). The four nav tabs (Roll/Character/Targets/Modifiers) only render when there's an active character. The d20 Settings button always renders.
+- **Migration (v1 → v2)**: handled in `migrateV1ToV2` in `state.js`. The old single `character` becomes a one-entry vault; the old `modifiers` list becomes `globalModifiers` (preserves their "shared everywhere" semantics — they were the only mod library before). `loadState` and `parseImport` both call the migrator, so existing localStorage and existing v1 backup files both upgrade automatically.
+- **Default modifier library** trimmed in v2 to four universally-applicable modifiers (Advantage, Disadvantage, Bless, Bardic Inspiration). The others that were class/build-specific (Sacred Weapon, Divine Smite, etc.) belong in a character's private modifier library — that wiring lands in slice 4 of the vault feature.
+- **Initialization**: `defaultVault()` in `state.js` produces the fresh-install state — one blank character named "Default Character", the four default global modifiers, empty targets/folders, default settings.
+
 ### Backup & Restore / cross-device sync (v0.6+)
 
 - Settings → **Backup & Restore** exposes Export (download JSON) and Import (file picker, with confirm) buttons. Helpers live in `state.js`: `downloadExport(state)` and `parseImport(text)`.
-- The exported JSON file is exactly the localStorage payload shape — `{ schemaVersion, character, modifiers, targets, folders, settings }` — plus an `exportedAt` ISO timestamp for human provenance. A round-trip (export → import) is intentionally lossless so users can use this as a backup or to move state between machines.
-- Filename pattern: `grimoire-<slugified-character-name>-YYYY-MM-DD.json` (falls back to `grimoire-export-YYYY-MM-DD.json` if the name is empty).
+- The exported JSON file mirrors the localStorage payload — v2 shape is `{ schemaVersion, characters, activeCharacterId, globalModifiers, targets, folders, settings }` — plus an `exportedAt` ISO timestamp for human provenance. A round-trip (export → import) is intentionally lossless.
+- Filename pattern: `grimoire-<slugified-name>-YYYY-MM-DD.json`. With one character the slug is that character's name (preserves the v1 feel); with multiple it's `vault`.
 - Import **replaces** all data — no merge. There's no per-section "import just spells" mode by design; merge semantics for richly-nested per-character data get confusing fast, and the destructive choice is gated behind a `window.confirm()`.
-- `parseImport` validates: valid JSON, top-level object, schemaVersion matches `SCHEMA_VERSION`, and a `character` object exists. Anything else (newer schema, garbage file, missing character) throws a typed error message that surfaces in the UI status line.
+- `parseImport` validates: valid JSON, top-level object, then either (a) `schemaVersion === 1` → auto-migrate via `migrateV1ToV2` so older single-character backups keep working forward, or (b) `schemaVersion === SCHEMA_VERSION` with a `characters` map. Anything else throws a typed error that surfaces in the UI status line.
+- After a bulk replace, the app returns to the vault so the user sees what just landed before diving back into a character.
 - The bulk-replace is wired through `replaceState(next)` in `App.jsx` — it splats each slice into its useState setter, so the persist `useEffect` fires once afterward and the new state lands in localStorage too.
 - Sync is intentionally manual — the user moves the file across devices via whatever cloud storage they already use (Dropbox, OneDrive, email-to-self, etc.). Automatic options were considered and explicitly declined; don't re-pitch them.
 
