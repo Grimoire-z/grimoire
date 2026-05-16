@@ -506,33 +506,91 @@ function levelFromHeaderText(text) {
 async function mapSpells(pdf, fields) {
   const ordered = await spellsInDocumentOrder(pdf);
 
-  // Pass 1: derive spell index → level using doc order.
-  const indexToLevel = {};
+  // Pass 1: walk widgets in document order, tracking the most-recent
+  // spellHeader level. For each spellName<N> encountered, record N into
+  // the level's bucket. Header level comes from the value text
+  // ("=== 1st LEVEL ===" → 1, "CANTRIPS" → 0); falls back to the
+  // spellHeader<H> field-name suffix if the value is unparseable
+  // (some DDB sheets label sections "Always Prepared" without a number).
+  const indicesPerLevel = {
+    0: new Set(), 1: new Set(), 2: new Set(), 3: new Set(), 4: new Set(),
+    5: new Set(), 6: new Set(), 7: new Set(), 8: new Set(), 9: new Set(),
+  };
   let currentLevel = null;
   for (const w of ordered) {
     const headerMatch = w.fieldName.match(/^spellHeader(\d+)$/i);
     if (headerMatch) {
-      const lvl = levelFromHeaderText(w.value);
+      const fromValue  = levelFromHeaderText(w.value);
+      const fromSuffix = Number(headerMatch[1]);
+      const lvl = fromValue != null
+        ? fromValue
+        : (fromSuffix >= 0 && fromSuffix <= 9 ? fromSuffix : null);
       if (lvl != null) currentLevel = lvl;
       continue;
     }
     const nameMatch = w.fieldName.match(/^spellName(\d+)$/i);
     if (nameMatch && currentLevel != null) {
-      indexToLevel[Number(nameMatch[1])] = currentLevel;
+      indicesPerLevel[currentLevel].add(Number(nameMatch[1]));
     }
   }
+
+  // Pass 1b: derive each level's spell-index range start. DDB lays
+  // spellName widget indices out CONTIGUOUSLY within each level,
+  // ascending (cantrips at the lowest indices, then 1st-level, 2nd,
+  // 3rd, …) — so once we know each level's starting index, any spell
+  // can be assigned to its level by range lookup, regardless of where
+  // its widget is physically positioned in the document.
+  //
+  // We can't always trust the walk's bucket assignments directly: DDB
+  // sometimes appends an end-of-document "Always Prepared" recap
+  // section whose widgets get walked when currentLevel still equals
+  // the LAST header (e.g. 4), polluting the highest level's bucket
+  // with low-index spells that actually belong to earlier levels.
+  // Resolve by deriving each level's start as the smallest index in
+  // its bucket STRICTLY GREATER than the previous level's start —
+  // out-of-order polluters get dropped here automatically.
+  const headersWithSpells = Object.keys(indicesPerLevel)
+    .map(Number)
+    .filter(h => indicesPerLevel[h].size > 0)
+    .sort((a, b) => a - b);
+  const ranges = []; // [{ level, startIdx }] sorted by startIdx ascending
+  let lowerBound = -1;
+  for (const h of headersWithSpells) {
+    const sortedIdx = [...indicesPerLevel[h]].sort((a, b) => a - b);
+    const start = sortedIdx.find(idx => idx > lowerBound);
+    if (start == null) continue; // entirely polluted level — skip
+    ranges.push({ level: h, startIdx: start });
+    lowerBound = start;
+  }
+  console.log('[grimoire] pdf: spell-level ranges', ranges);
+
+  // Map any spell-name index to its level: walk the sorted ranges and
+  // pick the largest range whose startIdx ≤ idx.
+  const levelForIndex = (idx) => {
+    let chosen = null;
+    for (const r of ranges) {
+      if (r.startIdx > idx) break;
+      chosen = r.level;
+    }
+    return chosen;
+  };
 
   // Pass 2: gather each spell's full row data from the field map.
   // DDB sometimes lists a spell twice (e.g. an "always prepared" entry plus
   // its native list entry); we de-dup by id within each level.
   const spellsByLevel = { 0: [], 1: [], 2: [], 3: [], 4: [], 5: [], 6: [], 7: [], 8: [], 9: [] };
   const seenByLevel   = { 0: new Set(), 1: new Set(), 2: new Set(), 3: new Set(), 4: new Set(), 5: new Set(), 6: new Set(), 7: new Set(), 8: new Set(), 9: new Set() };
-  const indices = Object.keys(indexToLevel).map(Number).sort((a, b) => a - b);
+  // Iterate every spellName index encountered in pass 1, regardless of
+  // which level's bucket it landed in — `levelForIndex` resolves the
+  // real level from the index ranges derived above.
+  const allIndices = new Set();
+  for (const s of Object.values(indicesPerLevel)) for (const i of s) allIndices.add(i);
+  const indices = [...allIndices].sort((a, b) => a - b);
   for (const i of indices) {
     const name  = readField(fields, `spellName${i}`);
     if (!name) continue;
-    const level = indexToLevel[i];
-    if (level < 0 || level > 9) continue;
+    const level = levelForIndex(i);
+    if (level == null || level < 0 || level > 9) continue;
 
     const display = String(name).trim();
     const id = display.toLowerCase();

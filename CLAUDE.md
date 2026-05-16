@@ -153,6 +153,14 @@ Some DDB field names have trailing whitespace (`DEXmod `, `Stealth `); `readFiel
 
 DDB sometimes lists a spell twice (e.g. native list + "Always Prepared" entry); the importer dedupes by id within each level, and weapons dedup overall.
 
+**Level assignment is index-range based, not document-order based.** Earlier versions walked widgets in document order and tagged each `spellName<N>` with whatever `currentLevel` had been set by the most recent `spellHeader<H>`. That failed on DDB sheets where an end-of-document "Always Prepared" recap appends extra `spellName` widgets *after* the highest-level header — those widgets got walked with `currentLevel = (highest header)` and incorrectly tagged. The current algorithm relies on DDB laying spellName indices CONTIGUOUSLY within each level (cantrips 0-N₀, 1st-level N₀+1-N₁, etc.) and works in two passes:
+1. Walk widgets in document order, bucketing each `spellName<N>` into `indicesPerLevel[currentLevel]` exactly as before (some pollution can still land in the highest bucket).
+2. For each level whose bucket is non-empty, derive its `startIdx` as the smallest index in the bucket that's strictly greater than the previous level's `startIdx`. This drops out-of-order polluters automatically. Then map every `spellName<N>` to its level by finding the largest range with `startIdx ≤ N`.
+
+If a sheet ever breaks the contiguity assumption (level B's indices interleaved with level A's), this would mis-assign — but DDB hasn't been observed to do that. The `[grimoire] pdf: spell-level ranges` log line prints the derived ranges, which is the right first check when something looks off after future DDB layout shifts.
+
+Header-level extraction prefers the value text (`levelFromHeaderText` matches "CANTRIP" or the first digit) and falls back to the `spellHeader<H>` field-name suffix when the value isn't parseable — that fallback is what keeps a "Always Prepared" label (no digit) from blocking `currentLevel` updates for the section that immediately follows.
+
 After parsing, `mapSpells` sorts each level's spell array alphabetically by display `name` (case-insensitive, locale-aware via `localeCompare` with `sensitivity: 'base'`). The PDF's encoded order is whatever DDB exported (often class-source clustered) and isn't useful in-app; alpha order makes a long spellbook navigable in the Character editor and in the Roll view's spell grid. Array#sort is stable in modern JS, so any duplicates that slipped past dedup keep their relative order.
 
 The Character view's PDF import section has a diagnostics panel with field/widget filters — useful when DDB shifts the layout again.
