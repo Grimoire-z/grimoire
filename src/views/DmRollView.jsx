@@ -68,11 +68,15 @@ export default function DmRollView({
     setTimeout(() => setCopied(false), 1500);
   }, [activeMods, modParams, modifiers, custom, targets, selectedTargets, setComposed, setHistory, setCopied]);
 
-  // Init-add bypasses the regular composer pipeline — `!init add` isn't
+  // Init-add bypasses the regular composer pipeline — `!i madd` isn't
   // one of the kind-driven commands and doesn't take targets/modifiers.
-  // Emit the literal command, update history with a distinct label.
+  // `!i madd "<name>"` is Avrae's "monster add" subcommand: looks up
+  // the monster in Avrae's bestiary, auto-loads stats + actions, rolls
+  // init off the monster's Dex mod. That makes downstream `!attack
+  // "<action>"` calls land against a populated action list — much
+  // richer than a generic `!init add`-only combatant.
   const fireInitAdd = useCallback((monster) => {
-    const cmd = `!init add 1d20 "${monster.name}"`;
+    const cmd = `!i madd "${monster.name}"`;
     setComposed(cmd);
     setHistory(prev => [{
       time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
@@ -159,7 +163,7 @@ function MonsterRollCard({ monster, fire, onInitAdd }) {
         <button
           type="button"
           onClick={onInitAdd}
-          title={`!init add 1d20 "${monster.name}"`}
+          title={`!i madd "${monster.name}"`}
           className="text-xs font-cmd uppercase tracking-wider text-gold border border-gold px-2 py-1 hover:bg-card-hover transition flex-shrink-0"
         >
           ↻ init add
