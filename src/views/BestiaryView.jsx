@@ -16,6 +16,8 @@ import { useEffect, useRef, useState } from 'react';
 import { makeBlankMonster } from '../state.js';
 import { ConfirmDeleteModal } from '../components.jsx';
 
+const bridge = typeof window !== 'undefined' ? window.grimoire : null;
+
 export default function BestiaryView({
   monsters, monsterFolders,
   onAddMonster, onRenameMonster, onDuplicateMonster, onDeleteMonster,
@@ -23,6 +25,7 @@ export default function BestiaryView({
   onAddFolder, onRenameFolder, onDeleteFolder,
 }) {
   const [pendingDelete, setPendingDelete] = useState(null);
+  const [picking,       setPicking]       = useState(false); // open Add-monster picker
 
   // Bucket monsters by folder for the grouped render. Monsters whose
   // folderId references a non-existent folder (e.g. after a folder
@@ -43,7 +46,32 @@ export default function BestiaryView({
   const totalCount  = Object.keys(monsters).length;
   const activeCount = Object.values(monsters).filter(m => m.active).length;
 
-  const onAddBlank = () => onAddMonster(makeBlankMonster('New Monster'));
+  // "+ Add monster" branch — picker modal with two creation paths.
+  const onPickBlank = () => {
+    setPicking(false);
+    onAddMonster(makeBlankMonster('New Monster'));
+  };
+
+  // "Import from 5e.tools" branch — IPC to main, errors propagate up
+  // to the modal so they show inline without closing it.
+  const onPick5etools = async (url) => {
+    if (!bridge?.importMonsterFrom5etools) {
+      throw new Error('5e.tools import requires the desktop app build');
+    }
+    const result = await bridge.importMonsterFrom5etools(url);
+    if (!result.ok) throw new Error(result.error);
+    // Mapped shape has the stat-block fields but no id/active/folderId;
+    // overlay onto a blank so the bestiary invariants stay intact.
+    const monster = {
+      ...makeBlankMonster(result.monster.name || 'Imported Monster'),
+      ...result.monster,
+    };
+    setPicking(false);
+    onAddMonster(monster);
+  };
+
+  // Folder-section "+ add here" stays blank-only — quick action for
+  // organizing. Use the top-level picker to import.
   const onAddBlankToFolder = (folderId) => {
     const m = makeBlankMonster('New Monster');
     m.folderId = folderId;
@@ -55,7 +83,7 @@ export default function BestiaryView({
       <div className="flex flex-wrap items-center gap-3 mb-4">
         <button
           type="button"
-          onClick={onAddBlank}
+          onClick={() => setPicking(true)}
           className="text-xs font-cmd uppercase tracking-wider text-gold border border-gold-strong px-3 py-1.5 hover:bg-active transition"
         >
           + Add monster
@@ -130,7 +158,164 @@ export default function BestiaryView({
           }}
         />
       )}
+
+      {picking && (
+        <AddMonsterPicker
+          onCancel={() => setPicking(false)}
+          onBlank={onPickBlank}
+          on5etools={onPick5etools}
+        />
+      )}
     </main>
+  );
+}
+
+// ─── Add-monster method picker ───────────────────────────────────────────
+// Two creation paths: blank monster, or 5e.tools URL import. The
+// 5e.tools path expands the modal to show a URL input + Import button.
+// Errors from main's importer surface inline so the user can edit the
+// URL without losing modal state. Backdrop + Escape cancel (unless a
+// fetch is mid-flight — would leak the work).
+//
+// New monsters land ungrouped by default; the user can move them via
+// the card's folder picker after.
+
+function AddMonsterPicker({ onCancel, onBlank, on5etools }) {
+  const [mode,  setMode]  = useState('choose');  // 'choose' | 'url'
+  const [url,   setUrl]   = useState('');
+  const [busy,  setBusy]  = useState(false);
+  const [error, setError] = useState(null);
+  const urlRef = useRef(null);
+
+  useEffect(() => {
+    if (mode === 'url') urlRef.current?.focus();
+  }, [mode]);
+
+  useEffect(() => {
+    const onKey = (e) => { if (e.key === 'Escape' && !busy) onCancel(); };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [onCancel, busy]);
+
+  const submitUrl = async () => {
+    const trimmed = url.trim();
+    if (!trimmed) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await on5etools(trimmed);
+      // on5etools calls setPicking(false) on success, which unmounts us.
+    } catch (e) {
+      setError(e.message || String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center px-4"
+      style={{ backgroundColor: 'rgba(0, 0, 0, 0.65)' }}
+      onClick={busy ? undefined : onCancel}
+    >
+      <div
+        className="bg-card border border-gold-strong rounded-sm max-w-md w-full p-5"
+        style={{ boxShadow: '0 20px 60px rgba(0,0,0,0.7), 0 0 0 1px rgba(var(--color-gold-rgb), 0.15)' }}
+        onClick={e => e.stopPropagation()}
+      >
+        <h3 className="font-display text-lg text-gold uppercase tracking-wider mb-2">
+          Add monster
+        </h3>
+        <p className="text-fade text-sm italic mb-4">
+          How do you want to create this monster?
+        </p>
+
+        {mode === 'choose' && (
+          <div className="space-y-2 mb-4">
+            <button
+              type="button"
+              onClick={onBlank}
+              className="btn-action w-full text-left p-3 border rounded-sm transition border-gold bg-grimoire hover:bg-card-hover"
+            >
+              <div className="font-display text-sm text-gold uppercase tracking-wider mb-1">
+                Start blank
+              </div>
+              <div className="text-fade text-xs italic">
+                Fresh entry — fill in name and (later) stat block by hand.
+              </div>
+            </button>
+            <button
+              type="button"
+              onClick={() => setMode('url')}
+              className="btn-action w-full text-left p-3 border rounded-sm transition border-gold bg-grimoire hover:bg-card-hover"
+            >
+              <div className="font-display text-sm text-gold uppercase tracking-wider mb-1">
+                Import from 5e.tools URL
+              </div>
+              <div className="text-fade text-xs italic">
+                Paste a bestiary link like{' '}
+                <span className="font-cmd">5e.tools/bestiary.html#goblin_mm</span> — main process fetches the JSON, normalizes the stat block, stores it.
+              </div>
+            </button>
+          </div>
+        )}
+
+        {mode === 'url' && (
+          <div className="space-y-3 mb-4">
+            <label className="block">
+              <span className="text-fade text-xs uppercase tracking-wider block mb-1">5e.tools bestiary URL</span>
+              <input
+                ref={urlRef}
+                type="text"
+                value={url}
+                onChange={e => setUrl(e.target.value)}
+                onKeyDown={e => {
+                  if (e.key === 'Enter' && !busy) { e.preventDefault(); submitUrl(); }
+                }}
+                placeholder="https://5e.tools/bestiary.html#goblin_mm"
+                className="lined w-full font-cmd"
+                disabled={busy}
+              />
+            </label>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={submitUrl}
+                disabled={busy || !url.trim()}
+                className="text-xs font-cmd uppercase tracking-wider border border-gold-strong px-3 py-1.5 hover:bg-active transition disabled:opacity-40"
+                style={{ color: 'var(--color-gold)' }}
+              >
+                {busy ? '… importing' : '↓ Import'}
+              </button>
+              <button
+                type="button"
+                onClick={() => { setMode('choose'); setError(null); }}
+                disabled={busy}
+                className="text-xs font-cmd uppercase tracking-wider text-fade hover:text-parchment transition disabled:opacity-50"
+              >
+                ← back
+              </button>
+            </div>
+            {error && (
+              <div className="text-crimson text-xs italic leading-relaxed">
+                {error}
+              </div>
+            )}
+          </div>
+        )}
+
+        <div className="flex justify-end">
+          <button
+            type="button"
+            onClick={onCancel}
+            disabled={busy}
+            className="text-xs font-cmd uppercase tracking-wider text-fade hover:text-parchment border border-gold px-3 py-1.5 hover:bg-active transition disabled:opacity-50"
+          >
+            Cancel
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
 

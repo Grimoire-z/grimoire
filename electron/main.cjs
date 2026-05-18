@@ -202,3 +202,240 @@ ipcMain.handle('open-external', async (_event, url) => {
   await shell.openExternal(url);
   return { ok: true };
 });
+
+// ─── 5e.tools monster importer ─────────────────────────────────────────────
+// Fetch a monster from 5e.tools by bestiary URL, normalize its shape, and
+// hand it back to the renderer. Runs in main because (a) we want a real
+// fetch (renderer would fetch fine too — 5e.tools is public — but main
+// keeps the data layer consistent with the GitHub updater), and (b)
+// having the mapper here means the renderer only deals with already-
+// normalized monster shapes via the standard IPC contract.
+//
+// URL shape: https://5e.tools/bestiary.html#<encoded-name>_<source>
+// Data URL:  https://5e.tools/data/bestiary/bestiary-<source>.json
+// JSON top:  { monster: [{ name, source, ... }, ...], ... }
+//
+// Source codes are lowercase in URLs, uppercase in JSON. Names are URL-
+// encoded; the last `_` in the fragment separates name from source code.
+
+function parseFiveEtoolsUrl(url) {
+  let u;
+  try { u = new URL(url); }
+  catch { throw new Error('not a valid URL'); }
+  if (!/(^|\.)5e\.tools$/i.test(u.host)) {
+    throw new Error(`expected a 5e.tools URL, got "${u.host}"`);
+  }
+  const hash = u.hash.replace(/^#/, '');
+  if (!hash) throw new Error('URL has no monster fragment (the #...part)');
+  const decoded = decodeURIComponent(hash);
+  const lastUnderscore = decoded.lastIndexOf('_');
+  if (lastUnderscore === -1) {
+    throw new Error('URL fragment missing the source code (expected "...#name_source")');
+  }
+  const name = decoded.slice(0, lastUnderscore).trim();
+  const source = decoded.slice(lastUnderscore + 1).trim();
+  if (!name || !source) throw new Error('could not parse name/source from URL fragment');
+  return { name, source };
+}
+
+async function fetchBestiary(source) {
+  const url = `https://5e.tools/data/bestiary/bestiary-${source.toLowerCase()}.json`;
+  let res;
+  try {
+    res = await fetch(url, { headers: { 'User-Agent': 'grimoire-app' } });
+  } catch (e) {
+    throw new Error(`network error fetching ${url}: ${e.message}`);
+  }
+  if (!res.ok) {
+    if (res.status === 404) {
+      throw new Error(`source "${source}" not found on 5e.tools (404). Check the source code in the URL.`);
+    }
+    throw new Error(`5e.tools returned ${res.status} ${res.statusText} for ${url}`);
+  }
+  return res.json();
+}
+
+function findMonster(name, source, bestiary) {
+  const list = bestiary.monster || [];
+  return list.find(m =>
+    (m.name || '').toLowerCase() === name.toLowerCase() &&
+    (m.source || '').toLowerCase() === source.toLowerCase()
+  );
+}
+
+// ─── 5e.tools shape helpers ───────────────────────────────────────────────
+// 5e.tools encodes inline references as `{@tag value|extra...}`. For our
+// stored monster shape we want readable plain text, so this strips tags
+// down to the visible value. Not exhaustive — covers the tags that
+// commonly appear in monster stat blocks; unknown tags fall through to
+// "tag value" which is at least legible.
+
+function stripFiveEtoolsTags(text) {
+  if (typeof text !== 'string') return '';
+  return text.replace(/\{@(\w+)\s+([^}|]+)(?:\|[^}]*)?\}/g, (_match, tag, value) => {
+    switch (tag.toLowerCase()) {
+      case 'dc':        return `DC ${value}`;
+      case 'h':         return 'Hit: ';
+      case 'atk':       return value; // attack type
+      case 'hit':
+      case 'damage':
+      case 'dice':
+      case 'd20':
+      case 'chance':
+      case 'recharge':
+      case 'spell':
+      case 'item':
+      case 'creature':
+      case 'condition':
+      case 'skill':
+      case 'sense':
+      case 'filter':
+        return value;
+      default:
+        return value;
+    }
+  });
+}
+
+function entriesToText(entries) {
+  if (typeof entries === 'string') return stripFiveEtoolsTags(entries);
+  if (Array.isArray(entries)) return entries.map(entriesToText).filter(Boolean).join('\n\n');
+  if (entries && typeof entries === 'object') {
+    if (entries.entries) return entriesToText(entries.entries);
+    if (entries.items)   return entriesToText(entries.items);
+  }
+  return '';
+}
+
+const SIZE_MAP = { T: 'Tiny', S: 'Small', M: 'Medium', L: 'Large', H: 'Huge', G: 'Gargantuan' };
+function mapSize(size) {
+  if (!size) return '';
+  const arr = Array.isArray(size) ? size : [size];
+  return arr.map(s => SIZE_MAP[s] || String(s)).join('/');
+}
+
+function typeToString(type) {
+  if (!type) return '';
+  if (typeof type === 'string') return type;
+  const base = type.type || type.choose || '';
+  const tagsRaw = type.tags || [];
+  const tags = tagsRaw.map(t => (typeof t === 'string' ? t : (t.tag || ''))).filter(Boolean);
+  return tags.length ? `${base} (${tags.join(', ')})` : String(base);
+}
+
+const ALIGN_MAP = {
+  L: 'lawful', N: 'neutral', C: 'chaotic',
+  G: 'good',   E: 'evil',
+  U: 'unaligned', A: 'any alignment',
+};
+function alignmentToString(alignment) {
+  if (!alignment) return '';
+  if (!Array.isArray(alignment)) return String(alignment);
+  // Skip nested complex alignment shapes (rare); join known letter codes.
+  return alignment
+    .map(a => (typeof a === 'string' ? ALIGN_MAP[a] || a : ''))
+    .filter(Boolean)
+    .join(' ');
+}
+
+function crToString(cr) {
+  if (cr == null) return '';
+  if (typeof cr === 'string' || typeof cr === 'number') return String(cr);
+  if (typeof cr === 'object' && cr.cr != null) return String(cr.cr);
+  return '';
+}
+
+function extractAc(acField) {
+  if (!acField) return null;
+  if (typeof acField === 'number') return acField;
+  if (Array.isArray(acField)) {
+    const first = acField[0];
+    if (typeof first === 'number') return first;
+    if (typeof first === 'object' && typeof first.ac === 'number') return first.ac;
+  }
+  if (typeof acField === 'object' && typeof acField.ac === 'number') return acField.ac;
+  return null;
+}
+
+function extractHp(hpField) {
+  if (!hpField) return null;
+  if (typeof hpField === 'number') return { average: hpField, formula: '' };
+  if (typeof hpField === 'object') {
+    return {
+      average: typeof hpField.average === 'number' ? hpField.average : null,
+      formula: hpField.formula || '',
+    };
+  }
+  return null;
+}
+
+function speedToString(speed) {
+  if (!speed) return '';
+  if (typeof speed === 'string') return speed;
+  if (typeof speed === 'object') {
+    const parts = [];
+    for (const [kind, val] of Object.entries(speed)) {
+      if (typeof val === 'number') {
+        parts.push(kind === 'walk' ? `${val} ft.` : `${kind} ${val} ft.`);
+      } else if (typeof val === 'object' && typeof val.number === 'number') {
+        parts.push(kind === 'walk' ? `${val.number} ft.` : `${kind} ${val.number} ft.`);
+      }
+    }
+    return parts.join(', ');
+  }
+  return '';
+}
+
+function slugifyActionName(name) {
+  return String(name || 'action').toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+}
+
+function extractActions(arr) {
+  if (!Array.isArray(arr)) return [];
+  return arr.map(a => ({
+    id: slugifyActionName(a.name),
+    name: a.name || '',
+    description: entriesToText(a.entries || []),
+  }));
+}
+
+function mapFiveEtoolsMonster(raw) {
+  return {
+    name:      raw.name || '',
+    source:    raw.source || '',
+    size:      mapSize(raw.size),
+    type:      typeToString(raw.type),
+    alignment: alignmentToString(raw.alignment),
+    cr:        crToString(raw.cr),
+    ac:        extractAc(raw.ac),
+    hp:        extractHp(raw.hp),
+    speed:     speedToString(raw.speed),
+    abilities: {
+      str: raw.str ?? 10, dex: raw.dex ?? 10, con: raw.con ?? 10,
+      int: raw.int ?? 10, wis: raw.wis ?? 10, cha: raw.cha ?? 10,
+    },
+    // Save / skill objects are already in `{ ability: "+N" }` shape.
+    saves:     raw.save || {},
+    skills:    raw.skill || {},
+    senses:    Array.isArray(raw.senses)    ? raw.senses.join(', ')    : (raw.senses || ''),
+    passive:   typeof raw.passive === 'number' ? raw.passive : null,
+    languages: Array.isArray(raw.languages) ? raw.languages.join(', ') : (raw.languages || ''),
+    traits:           extractActions(raw.trait),
+    actions:          extractActions(raw.action),
+    legendaryActions: extractActions(raw.legendary),
+  };
+}
+
+ipcMain.handle('import-monster-from-5etools', async (_event, url) => {
+  try {
+    const { name, source } = parseFiveEtoolsUrl(url);
+    const bestiary = await fetchBestiary(source);
+    const raw = findMonster(name, source, bestiary);
+    if (!raw) {
+      throw new Error(`monster "${name}" not found in bestiary-${source.toLowerCase()}.json — does the URL still resolve in your browser?`);
+    }
+    return { ok: true, monster: mapFiveEtoolsMonster(raw) };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+});
