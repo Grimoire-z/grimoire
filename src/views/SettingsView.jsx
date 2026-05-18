@@ -6,6 +6,8 @@ import { downloadExport, parseImport } from '../state.js';
 export default function SettingsView({ settings, setSettings, state, replaceState }) {
   return (
     <main className="px-6 pb-12 max-w-5xl mx-auto relative z-10 flex flex-col gap-4">
+      <ModeSection settings={settings} setSettings={setSettings} />
+
       <UpdatesSection />
 
       <BackupRestoreSection state={state} replaceState={replaceState} />
@@ -42,6 +44,36 @@ export default function SettingsView({ settings, setSettings, state, replaceStat
 
       <CreditsSection />
     </main>
+  );
+}
+
+// ─── Mode (Player ⇄ DM) ──────────────────────────────────────────────────
+// Toggles the entire app between Player mode (character vault + per-PC
+// surfaces) and DM mode (bestiary + monster-driven Roll). Persisted in
+// settings.dmMode so the choice survives reloads. Switching is non-
+// destructive — your character vault, modifiers, targets, etc. all stay
+// in localStorage when you flip into DM mode and come back exactly as
+// you left them.
+
+function ModeSection({ settings, setSettings }) {
+  const dmMode = !!settings.dmMode;
+  const toggle = () => setSettings(s => ({ ...s, dmMode: !s.dmMode }));
+  return (
+    <SectionCard title="Mode">
+      <p className="text-fade text-sm italic mb-4">
+        {dmMode
+          ? 'Currently in DM mode — the header shows Bestiary instead of Vault, and Roll operates over active monsters. Switching back restores your character vault.'
+          : 'Currently in Player mode — character vault, Roll/Character tabs, and per-character data. Switch to DM mode for the bestiary and monster-driven Roll page.'}
+      </p>
+      <button
+        type="button"
+        onClick={toggle}
+        className="text-xs font-cmd uppercase tracking-wider border border-gold-strong px-3 py-1.5 hover:bg-active transition"
+        style={{ color: 'var(--color-gold)' }}
+      >
+        {dmMode ? '← Switch to Player mode' : 'Switch to DM mode →'}
+      </button>
+    </SectionCard>
   );
 }
 

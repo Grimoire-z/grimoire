@@ -10,13 +10,21 @@ import CharacterView from './views/CharacterView.jsx';
 import TargetsView from './views/TargetsView.jsx';
 import SettingsView from './views/SettingsView.jsx';
 import VaultView from './views/VaultView.jsx';
+import BestiaryView from './views/BestiaryView.jsx';
 import { D20Icon, PortraitDisplay } from './components.jsx';
 
-// Modes that require an active character. 'vault' and 'settings' don't —
-// 'vault' is the character picker / launch page, 'settings' is app-wide.
-const MODES = [
+// Header nav lists. Player mode requires an active character for the four
+// tabs; DM mode is character-free — Bestiary is the home surface and Roll
+// will operate over active monsters once slice 4 lands.
+const MODES_PLAYER = [
   { id: 'roll',      label: 'Roll' },
   { id: 'character', label: 'Character' },
+  { id: 'targets',   label: 'Targets' },
+  { id: 'modifiers', label: 'Modifiers' },
+];
+const MODES_DM = [
+  { id: 'bestiary',  label: 'Bestiary' },
+  { id: 'roll',      label: 'Roll' },
   { id: 'targets',   label: 'Targets' },
   { id: 'modifiers', label: 'Modifiers' },
 ];
@@ -27,12 +35,20 @@ export default function App() {
   // come up as a one-entry vault.
   const initial = useMemo(() => loadState() || defaultVault(), []);
 
-  // Mode is session-only; every launch starts at the vault.
-  const [mode, setMode] = useState('vault');
+  // Mode is session-only; every launch starts at the home surface for
+  // whichever mode (player vs DM) the persisted settings are in.
+  const initialDmMode = !!initial.settings?.dmMode;
+  const [mode, setMode] = useState(initialDmMode ? 'bestiary' : 'vault');
 
   // Vault + active selection.
   const [characters,        setCharacters]        = useState(initial.characters);
   const [activeCharacterId, setActiveCharacterId] = useState(initial.activeCharacterId);
+
+  // Bestiary (DM mode). Same shape pattern as the character vault — a map
+  // keyed by stable id + a sibling folders array. Stays inert in player
+  // mode; only consumed when settings.dmMode is on.
+  const [monsters,       setMonsters]       = useState(initial.monsters || {});
+  const [monsterFolders, setMonsterFolders] = useState(initial.monsterFolders || []);
 
   // Other persisted slices.
   const [globalModifiers, setGlobalModifiers] = useState(initial.globalModifiers || DEFAULT_MODIFIERS);
@@ -108,8 +124,18 @@ export default function App() {
 
   // Persist whenever the durable bits change.
   useEffect(() => {
-    saveState({ characters, activeCharacterId, globalModifiers, targets, folders, settings });
-  }, [characters, activeCharacterId, globalModifiers, targets, folders, settings]);
+    saveState({ characters, activeCharacterId, globalModifiers, targets, folders, monsters, monsterFolders, settings });
+  }, [characters, activeCharacterId, globalModifiers, targets, folders, monsters, monsterFolders, settings]);
+
+  // Mode-toggle safety: keep `mode` valid as dmMode flips. Player-only
+  // modes (vault, character) auto-route to bestiary on flip-to-DM;
+  // DM-only modes (bestiary) auto-route to vault on flip-to-player.
+  // Shared modes (roll, targets, modifiers, settings) stay put.
+  useEffect(() => {
+    if (settings.dmMode && (mode === 'vault' || mode === 'character')) setMode('bestiary');
+    else if (!settings.dmMode && mode === 'bestiary') setMode('vault');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [settings.dmMode]);
 
   // Apply theme + font preset to <html> so CSS-var swaps reach every node.
   useEffect(() => {
@@ -128,10 +154,12 @@ export default function App() {
     if (next.globalModifiers)   setGlobalModifiers(next.globalModifiers);
     if (next.targets)           setTargets(next.targets);
     if (next.folders)           setFolders(next.folders);
+    if (next.monsters)          setMonsters(next.monsters);
+    if (next.monsterFolders)    setMonsterFolders(next.monsterFolders);
     if (next.settings)          setSettings(s => ({ ...DEFAULT_SETTINGS, ...next.settings }));
-    // Stay on / return to the vault after a bulk replace so the user sees
-    // what just landed before diving back into a character.
-    setMode('vault');
+    // Stay on / return to the home surface after a bulk replace so the
+    // user sees what just landed before diving in. Home is mode-aware.
+    setMode(next.settings?.dmMode ? 'bestiary' : 'vault');
   };
 
   // Vault → enter a character: set active, switch into Roll view.
@@ -215,13 +243,16 @@ export default function App() {
   // view-internal useState resets without us having to lift it up.
   const charKey = activeCharacterId || 'vault';
 
+  const dmMode = !!settings.dmMode;
+
   return (
     <div className="bg-grimoire grain font-body text-parchment min-h-screen relative overflow-hidden">
       <Header
         mode={mode} setMode={setMode}
         character={activeCharacter}
+        dmMode={dmMode}
       />
-      {mode === 'vault' && (
+      {!dmMode && mode === 'vault' && (
         <VaultView
           characters={characters}
           activeCharacterId={activeCharacterId}
@@ -233,7 +264,10 @@ export default function App() {
           onDelete={deleteCharacter}
         />
       )}
-      {mode === 'roll' && activeCharacter && (
+      {dmMode && mode === 'bestiary' && (
+        <BestiaryView />
+      )}
+      {!dmMode && mode === 'roll' && activeCharacter && (
         <RollView
           key={charKey}
           character={activeCharacter}
@@ -251,7 +285,10 @@ export default function App() {
           copied={copied} setCopied={setCopied}
         />
       )}
-      {mode === 'character' && activeCharacter && (
+      {dmMode && mode === 'roll' && (
+        <DmRollPlaceholder />
+      )}
+      {!dmMode && mode === 'character' && activeCharacter && (
         <CharacterView
           key={charKey}
           character={activeCharacter}
@@ -266,8 +303,9 @@ export default function App() {
       )}
       {mode === 'modifiers' && (
         <ModifierForgeView
-          key={charKey}
-          characterModifiers={characterModifiers} setCharacterModifiers={setCharacterModifiers}
+          key={dmMode ? 'dm' : charKey}
+          characterModifiers={dmMode ? [] : characterModifiers}
+          setCharacterModifiers={dmMode ? (() => {}) : setCharacterModifiers}
           globalModifiers={globalModifiers} setGlobalModifiers={setGlobalModifiers}
           activeMods={activeMods} setActiveMods={setActiveMods}
         />
@@ -275,7 +313,7 @@ export default function App() {
       {mode === 'settings' && (
         <SettingsView
           settings={settings} setSettings={setSettings}
-          state={{ characters, activeCharacterId, globalModifiers, targets, folders, settings }}
+          state={{ characters, activeCharacterId, globalModifiers, targets, folders, monsters, monsterFolders, settings }}
           replaceState={replaceState}
         />
       )}
@@ -283,33 +321,63 @@ export default function App() {
   );
 }
 
-function Header({ mode, setMode, character }) {
+// Placeholder for the DM Roll surface — landing in slice 4 once active
+// monsters drive a real action grid.
+function DmRollPlaceholder() {
+  return (
+    <main className="relative z-10 px-6 pb-12 max-w-7xl mx-auto mt-4">
+      <div className="border border-gold rounded-sm p-8 text-center bg-card">
+        <div className="font-display text-gold text-lg uppercase tracking-wider mb-2">
+          DM Roll
+        </div>
+        <p className="text-fade italic text-sm max-w-xl mx-auto">
+          Coming next: active monsters from the Bestiary surface here as
+          cards, each with clickable attack / save / check buttons that
+          compose Avrae <span className="font-cmd">!attack</span>,
+          {' '}<span className="font-cmd">!save</span>,
+          {' '}<span className="font-cmd">!check</span> commands. A per-card
+          {' '}<span className="font-cmd">!init add</span> button spins up
+          the encounter; combat itself runs through Avrae's initiative
+          tracker on the current combatant's turn.
+        </p>
+      </div>
+    </main>
+  );
+}
+
+function Header({ mode, setMode, character, dmMode }) {
   const subhead =
     mode === 'vault'     ? 'choose a character to play, or add a new one' :
+    mode === 'bestiary'  ? 'imported monster stat blocks · mark "active" to surface them on the Roll page' :
     mode === 'character' ? 'authoring · changes save automatically' :
     mode === 'targets'   ? 'organize encounter targets into folders' :
     mode === 'modifiers' ? 'forge toggleable buffs, debuffs, and conditions that stack onto your rolls' :
-    mode === 'settings'  ? 'theme & typography · more options to come' :
+    mode === 'settings'  ? 'theme · typography · DM mode toggle · updates · backup' :
     null;
 
-  // Nav tabs are hidden in vault mode (no active character to drive them).
-  const showNav = mode !== 'vault';
+  // Player mode hides the nav on its home surface (vault — no active character
+  // to drive the tabs). DM mode keeps the nav visible everywhere because
+  // Bestiary is itself one of the nav items, not a separate launch page.
+  const showNav = dmMode || mode !== 'vault';
+  const home = dmMode ? 'bestiary' : 'vault';
+  const homeLabel = dmMode ? 'back to bestiary' : 'back to vault';
+  const modeList = dmMode ? MODES_DM : MODES_PLAYER;
 
   return (
     <header className="relative z-10 px-6 pt-6 pb-3 max-w-7xl mx-auto">
       <div className="flex items-baseline justify-between mb-1 gap-4 flex-wrap">
         <button
           type="button"
-          onClick={() => setMode('vault')}
-          title={mode === 'vault' ? 'already at the vault' : 'back to vault'}
-          aria-label="back to vault"
+          onClick={() => setMode(home)}
+          title={mode === home ? `already at the ${home}` : homeLabel}
+          aria-label={homeLabel}
           className="font-display text-gold text-2xl font-bold hover:text-parchment transition cursor-pointer"
         >
           GRIMOIRE
         </button>
         {showNav && (
           <nav className="flex items-center gap-1">
-            {MODES.map(m => (
+            {modeList.map(m => (
               <button key={m.id}
                       onClick={() => setMode(m.id)}
                       className={`text-xs font-cmd uppercase tracking-wider px-3 py-1.5 border transition ${
@@ -338,7 +406,7 @@ function Header({ mode, setMode, character }) {
         </button>
       </div>
       <div className="divider mb-3" />
-      {mode === 'roll' && character ? (
+      {mode === 'roll' && !dmMode && character ? (
         <div className="flex items-center justify-between gap-4 flex-wrap">
           <div className="flex items-center gap-3 min-w-0">
             <PortraitDisplay portrait={character.portrait} size={48} />
@@ -359,9 +427,11 @@ function Header({ mode, setMode, character }) {
         <div>
           <div className="font-display text-xl text-gold">
             {mode === 'vault'     ? 'VAULT'
+              : mode === 'bestiary'  ? 'BESTIARY'
               : mode === 'character' ? 'CHARACTER SHEET'
               : mode === 'targets'   ? 'TARGET BOOK'
               : mode === 'settings'  ? 'SETTINGS'
+              : mode === 'roll' && dmMode ? 'DM ROLL'
               : 'MODIFIER FORGE'}
           </div>
           {subhead && <div className="text-fade text-sm italic">{subhead}</div>}

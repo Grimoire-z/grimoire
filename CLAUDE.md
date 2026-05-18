@@ -25,8 +25,8 @@ This file is the source of truth for project memory. It's committed to the repo 
 - `electron/main.cjs` — Electron main process; loads dev URL or `dist/index.html`. Sandbox enabled, devtools open detached in dev
 - `electron/preload.cjs` — exposes `window.grimoire` (platform info)
 - `src/main.jsx` — Vite entry
-- `src/App.jsx` — top-level component: header, vault routing, mode switching (Vault / Roll / Character / Targets / Modifiers / Settings). Holds the `characters` map + `activeCharacterId` and derives `activeCharacter` from them.
-- `src/state.js` — DEFAULT_CHARACTER, DEFAULT_MODIFIERS, DEFAULT_SETTINGS, SAVE_DEFS, SKILL_DEFS, `makeCharacterId`/`makeBlankCharacter`/`defaultVault` (vault helpers), `migrateV1ToV2` (called inside `loadState` and `parseImport`), `loadState`/`saveState`, `downloadExport`/`parseImport`
+- `src/App.jsx` — top-level component: header, vault/bestiary routing, mode switching (Vault / Bestiary / Roll / Character / Targets / Modifiers / Settings). Holds the `characters` map + `activeCharacterId` (player mode) and the `monsters` map + `monsterFolders` (DM mode). Derives `activeCharacter` from the active id. Header nav list is `MODES_PLAYER` or `MODES_DM` based on `settings.dmMode`.
+- `src/state.js` — DEFAULT_CHARACTER, DEFAULT_MODIFIERS, DEFAULT_SETTINGS (incl. `dmMode`), SAVE_DEFS, SKILL_DEFS, `makeCharacterId`/`makeBlankCharacter`/`makeMonsterId`/`makeBlankMonster`/`defaultVault` (vault helpers), `migrate` chain (v1→v2→v3, called inside `loadState` and `parseImport`), `loadState`/`saveState`, `downloadExport`/`parseImport`
 - `src/composer.js` — pure command composition (compose, composeFromMod, substituteParams)
 - `src/ddbPdfImport.js` — D&D Beyond fillable PDF importer; uses pdfjs-dist worker via `?worker` Vite import. PDF is the only supported import path (DDB retired their JSON character-service endpoint, so the previous `ddbImport.js` JSON path was removed in v0.5+). pdfjs-dist itself is dynamic-imported via a memoized `loadPdfjs()` helper inside this file — keeps the main bundle ~270KB instead of ~660KB. **Don't re-add a top-level `import * as pdfjs from 'pdfjs-dist'`** or the chunk-split benefit goes away.
 - `src/components.jsx` — shared (Checkbox, TabBar, ActionCard, ModifierRow, FieldLabel, SectionCard, D20Icon, PortraitDisplay, fileToPortraitDataUrl)
@@ -37,6 +37,7 @@ This file is the source of truth for project memory. It's committed to the repo 
 - `src/views/TargetsView.jsx` — target book; folders + targets
 - `src/views/SettingsView.jsx` — full-page settings (Updates + Backup & Restore + Theme + Fonts + Credits); reached via the d20 button in the header
 - `src/views/VaultView.jsx` — launch page; grid of character cards + an "+ add" card. Clicking a card calls `enterCharacter(id)` in `App.jsx`, which sets `activeCharacterId` and routes to Roll. The GRIMOIRE header title is the way back from any mode.
+- `src/views/BestiaryView.jsx` — DM mode's analogue of the vault: holds imported monster stat blocks. Each card carries an `active` checkbox that surfaces the monster on the DM Roll page. Currently slice 1 — empty-state placeholder only; cards/folders/import land in slices 2-3.
 - `src/index.css` — Google Fonts + Tailwind import + custom theme classes
 - `scripts/inspect-pdf.mjs`, `scripts/test-mapper.mjs` — offline diagnostic tools for tuning the PDF importer; useful when DDB shifts the layout
 
@@ -67,6 +68,21 @@ This file is the source of truth for project memory. It's committed to the repo 
 - `--color-gold-rgb` / `--color-crimson-rgb` are stored as comma-separated triplets so existing `rgba(...)` alpha-tinted borders and shadows compose with the theme color via `rgba(var(--color-gold-rgb), 0.35)`.
 - New themes should preserve role semantics: `gold` is the primary accent, `crimson` is for danger / low-resource indicators. Shift hue/saturation, don't swap roles.
 - Inline `style={{ backgroundColor: '#d4a644' }}` ad-hoc colors should be `style={{ backgroundColor: 'var(--color-gold)' }}` so theme swaps reach them. The few legacy spots in `components.jsx` (Checkbox/ModifierRow filled checkmark, TabBar underline) have been converted; keep the convention going.
+
+### DM mode (v0.9+, slice 1 — foundation)
+
+- A persisted setting (`settings.dmMode: boolean`) flips the whole app between **Player mode** (character vault + per-character surfaces) and **DM mode** (bestiary + monster-driven Roll). Toggle lives in Settings → Mode at the top. Switching is non-destructive: each mode's state stays intact in localStorage when you're in the other.
+- **Header switcheroo**: when `dmMode` is on the header nav becomes `MODES_DM = [Bestiary, Roll, Targets, Modifiers]`; off, it's `MODES_PLAYER = [Roll, Character, Targets, Modifiers]`. The home surface (GRIMOIRE title click) is bestiary in DM mode, vault in player. Unlike player mode (which hides the nav on vault), DM mode always shows the nav because Bestiary is itself one of the nav items rather than a separate launch surface.
+- **Mode-toggle safety**: an effect keyed on `settings.dmMode` in `App.jsx` reroutes the current `mode` when it'd be invalid for the new toggle state — player-only modes (`vault`, `character`) bounce to `bestiary` on flip-to-DM; the DM-only `bestiary` bounces to `vault` on flip-to-player. Shared modes (`roll`, `targets`, `modifiers`, `settings`) stay put. The initial `mode` value on launch also respects persisted `dmMode` so a DM-mode user reopens to `bestiary`, not `vault`.
+- **Schema v3** adds two top-level slices to the persisted shape:
+  ```
+  monsters: { [id]: { id, name, active, folderId, ... } }
+  monsterFolders: [{ id, name }]
+  ```
+  Each monster currently carries only `id`, `name`, `active`, `folderId`. Richer stat-block fields (AC, HP, abilities, actions, legendary actions, …) land in later slices as the 5e.tools importer is wired in. `migrate()` in `state.js` chains the prior `migrateV1ToV2` with a new `migrateV2ToV3` that adds empty `monsters`/`monsterFolders` and merges fresh `DEFAULT_SETTINGS` (so existing installs come up with `dmMode: false` set explicitly). Backup imports flow through the same chain so older export files keep working forward.
+- **ModifierForge in DM mode**: there's no active character, so per-character modifiers are vacuous. App.jsx passes `characterModifiers=[]` + a no-op setter when `dmMode` is on; only `globalModifiers` is editable. Targets work as-is since they were already global.
+- **Roll in DM mode (slice 1)**: shows a placeholder card pointing at the upcoming slice 4. Real action grid (active-monster cards + clickable attack/save/check/init buttons composing `!attack`/`!save`/`!check`/`!init add`) lands then.
+- **Avrae integration model (locked in slice 0 design)**: combat is initiative-driven. Each "active" monster gets a per-card `!init add <init> <name>` helper button to bootstrap the encounter; once monsters are in init, plain `!attack`/`!save`/`!check` (no monset/`!ma`) rolls for the current combatant. Our cards are reference + button source; init bookkeeping happens in Discord chat.
 
 ### Character vault (v0.8+)
 

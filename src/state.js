@@ -1,25 +1,48 @@
-// Persistent app state: character vault + per-character + global slices + UI settings.
+// Persistent app state: character vault + bestiary + per-character + global slices + UI settings.
 // localStorage with a versioned schema; v1 (single character) auto-migrates to v2
-// (vault of N characters) on load. STORAGE_KEY keeps its historical "v1" suffix
-// for backwards-compat with existing installs; the inner `schemaVersion` field
-// is the canonical version marker.
+// (vault of N characters), and v2 auto-migrates to v3 (adds bestiary slices for
+// DM mode). STORAGE_KEY keeps its historical "v1" suffix for backwards-compat
+// with existing installs; the inner `schemaVersion` field is the canonical version marker.
 
 import { DEFAULT_THEME_ID, DEFAULT_FONT_PRESET_ID } from './themes.js';
 
-export const SCHEMA_VERSION = 2;
+export const SCHEMA_VERSION = 3;
 
 export const DEFAULT_SETTINGS = {
   theme: DEFAULT_THEME_ID,
   fontPreset: DEFAULT_FONT_PRESET_ID,
   preparedOnly: false,
+  dmMode: false,
 };
 
 const STORAGE_KEY = 'grimoire.state.v1';
 
 // 8-char base36 id, ~47 bits of entropy. Collision-safe for personal vault
 // sizes; not a real UUID because we don't need globally-unique identifiers.
-export function makeCharacterId() {
+// Shared by makeCharacterId and makeMonsterId — both pools live in different
+// maps so a cross-pool collision is harmless either way.
+function makeId() {
   return Math.random().toString(36).slice(2, 10);
+}
+
+export function makeCharacterId() {
+  return makeId();
+}
+
+export function makeMonsterId() {
+  return makeId();
+}
+
+// Minimal monster shape for slice 1 — name + active + optional folderId.
+// Richer fields (AC, HP, abilities, actions, legendary actions, …) land in
+// later slices as the 5e.tools importer and DM Roll view land.
+export function makeBlankMonster(name = 'New Monster') {
+  return {
+    id: makeMonsterId(),
+    name,
+    active: false,
+    folderId: null,
+  };
 }
 
 // ─── Standard 5e tables ────────────────────────────────────────────────────
@@ -223,15 +246,21 @@ export function defaultVault() {
     globalModifiers: DEFAULT_MODIFIERS,
     targets: [],
     folders: [],
+    monsters: {},
+    monsterFolders: [],
     settings: { ...DEFAULT_SETTINGS },
   };
 }
 
 // ─── Migration ────────────────────────────────────────────────────────────
-// Wraps a v1 payload's single character into a one-entry vault. The v1
+// v1 → v2: wraps a single character into a one-entry vault. The v1
 // `modifiers` library becomes `globalModifiers` (preserves the previous
 // shared-across-everything semantics). Each character gets a portrait and
 // per-character modifiers slot (empty by default).
+// v2 → v3: adds empty bestiary slices (`monsters`, `monsterFolders`) and
+// the new `settings.dmMode` flag. Existing player-mode state is untouched.
+// `migrate()` chains the migrators in sequence so installs from any prior
+// version land on the current schema in one pass.
 
 function migrateV1ToV2(v1) {
   const character = {
@@ -251,6 +280,25 @@ function migrateV1ToV2(v1) {
   };
 }
 
+function migrateV2ToV3(v2) {
+  return {
+    ...v2,
+    schemaVersion: 3,
+    monsters: {},
+    monsterFolders: [],
+    // DEFAULT_SETTINGS spread ensures dmMode (and any future settings keys)
+    // land with their defaults; user-set values from v2 win on overlap.
+    settings: { ...DEFAULT_SETTINGS, ...(v2.settings || {}) },
+  };
+}
+
+function migrate(payload) {
+  let s = payload;
+  if (s?.schemaVersion === 1) s = migrateV1ToV2(s);
+  if (s?.schemaVersion === 2) s = migrateV2ToV3(s);
+  return s;
+}
+
 // ─── Persistence ───────────────────────────────────────────────────────────
 
 export function loadState() {
@@ -258,8 +306,8 @@ export function loadState() {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return null;
     const parsed = JSON.parse(raw);
-    if (parsed.schemaVersion === 1) return migrateV1ToV2(parsed);
-    if (parsed.schemaVersion === SCHEMA_VERSION) return parsed;
+    const migrated = migrate(parsed);
+    if (migrated?.schemaVersion === SCHEMA_VERSION) return migrated;
     return null; // unknown schema — fall back to defaults rather than corrupt state
   } catch {
     return null;
@@ -329,26 +377,29 @@ export function parseImport(text) {
     throw new Error('not a Grimoire export file');
   }
 
-  // v1 → v2 migration (older single-character backups).
+  // v1 export validation — the migrator chain handles the rest.
   if (parsed.schemaVersion === 1) {
     if (!parsed.character || typeof parsed.character !== 'object') {
       throw new Error('v1 export is missing the character section');
     }
-    return migrateV1ToV2(parsed);
   }
 
-  if (parsed.schemaVersion !== SCHEMA_VERSION) {
+  // Auto-migrate older payloads forward (v1 → v2 → v3) so backups from any
+  // prior version stay importable.
+  const migrated = migrate(parsed);
+
+  if (migrated?.schemaVersion !== SCHEMA_VERSION) {
     throw new Error(
       `incompatible schema version (file is v${parsed.schemaVersion ?? '?'}, app is v${SCHEMA_VERSION})`
     );
   }
 
-  // Loose v2 shape check — enough to reject unrelated JSON without being so
+  // Loose shape check — enough to reject unrelated JSON without being so
   // strict that future small additions to the payload would block import.
-  if (!parsed.characters || typeof parsed.characters !== 'object') {
+  if (!migrated.characters || typeof migrated.characters !== 'object') {
     throw new Error('export is missing the characters section');
   }
-  return parsed;
+  return migrated;
 }
 
 export function resetState() {
