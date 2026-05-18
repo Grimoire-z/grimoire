@@ -64,7 +64,7 @@ export function RollSidePanel({
       </div>
       <div className="divider mb-3" />
 
-      <div className="space-y-2">
+      <div className="grid grid-cols-2 gap-2">
         {modifiers.map(m => (
           <ModifierRow key={m.id} mod={m}
             active={!!validActiveMods[m.id]}
@@ -73,7 +73,7 @@ export function RollSidePanel({
             onParamChange={(pid, idx) => setModParam(m.id, pid, idx)} />
         ))}
         {modifiers.length === 0 && (
-          <div className="text-fade italic text-sm text-center py-8">
+          <div className="col-span-2 text-fade italic text-sm text-center py-8">
             no modifiers — open <span className="text-gold">⚙ modifiers</span> in the header to forge some
           </div>
         )}

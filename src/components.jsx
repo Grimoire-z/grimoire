@@ -57,31 +57,28 @@ export function ActionCard({ title, sub, right, onClick }) {
 export function ModifierRow({ mod, active, paramSelections, onToggle, onParamChange }) {
   return (
     <div
-      className={`border rounded-sm p-2.5 cursor-pointer transition ${
+      className={`border rounded-sm px-2 py-1 cursor-pointer transition ${
         active ? 'bg-active glow-active border-gold-strong' : 'bg-card border-gold hover:bg-card-hover'
       }`}
       onClick={onToggle}
     >
-      <div className="flex items-center gap-2.5">
+      <div className="flex items-center gap-2">
         <div
-          className={`w-3.5 h-3.5 border rounded-sm flex-shrink-0 flex items-center justify-center text-xs ${
+          className={`w-3 h-3 border rounded-sm flex-shrink-0 flex items-center justify-center text-[10px] ${
             active ? 'border-gold-strong' : 'border-gold'
           }`}
           style={active ? { backgroundColor: 'var(--color-gold)', color: 'var(--color-bg)' } : {}}
         >
           {active && '✓'}
         </div>
-        <div className="flex-1 min-w-0">
-          <div className={`font-display text-sm uppercase tracking-wide ${active ? 'text-gold' : 'text-parchment'}`}>
-            {mod.name}
-          </div>
-          <div className="text-xs text-fade italic truncate">{mod.sub}</div>
+        <div className={`flex-1 min-w-0 font-display text-xs uppercase tracking-wide truncate ${active ? 'text-gold' : 'text-parchment'}`}>
+          {mod.name}
         </div>
         {active && mod.params.length > 0 && (
-          <div onClick={e => e.stopPropagation()} className="flex gap-2 items-center flex-shrink-0">
+          <div onClick={e => e.stopPropagation()} className="flex gap-1 items-center flex-shrink-0">
             {mod.params.map(p => (
               <div key={p.id} className="flex items-center gap-1">
-                <span className="text-xs text-fade">{p.label}</span>
+                <span className="text-[10px] text-fade">{p.label}</span>
                 <select className="lined" value={paramSelections[p.id] ?? p.defaultIndex}
                         onChange={e => onParamChange(p.id, Number(e.target.value))}>
                   {p.options.map((o, i) => <option key={i} value={i}>{o.label}</option>)}
