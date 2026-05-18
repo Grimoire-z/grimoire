@@ -15,13 +15,14 @@
 import { useEffect, useRef, useState } from 'react';
 import { makeBlankMonster } from '../state.js';
 import { ConfirmDeleteModal } from '../components.jsx';
+import StatBlockModal from './StatBlockModal.jsx';
 
 const bridge = typeof window !== 'undefined' ? window.grimoire : null;
 
 export default function BestiaryView({
   monsters, monsterFolders,
   onAddMonster, onRenameMonster, onDuplicateMonster, onDeleteMonster,
-  onToggleMonsterActive, onMoveMonsterToFolder,
+  onToggleMonsterActive, onMoveMonsterToFolder, onUpdateMonster,
   onAddFolder, onRenameFolder, onDeleteFolder,
 }) {
   const [pendingDelete, setPendingDelete] = useState(null);
@@ -194,6 +195,7 @@ export default function BestiaryView({
       {liveViewing && (
         <StatBlockModal
           monster={liveViewing}
+          setMonster={(updater) => onUpdateMonster(liveViewing.id, updater)}
           onClose={() => setViewing(null)}
         />
       )}
@@ -785,206 +787,7 @@ function MonsterRenameInput({ value, onCommit, onCancel }) {
   );
 }
 
-// ─── Stat block modal ────────────────────────────────────────────────────
-// Read-only view of a single monster's full stat block. Layout mirrors the
-// classic D&D 5e stat-block conventions: identity line, combat line,
-// ability score grid, attribute summaries (saves / skills / senses /
-// languages / CR), then traits / actions / legendary actions sections.
-// Backdrop click + Escape + X button all close. Cap the height so big
-// stat blocks (dragons, archmages) scroll inside the modal rather than
-// blowing out the viewport.
-
-const ABILITIES = [
-  { key: 'str', label: 'STR' },
-  { key: 'dex', label: 'DEX' },
-  { key: 'con', label: 'CON' },
-  { key: 'int', label: 'INT' },
-  { key: 'wis', label: 'WIS' },
-  { key: 'cha', label: 'CHA' },
-];
-
-const SKILL_LABELS = {
-  acrobatics: 'Acrobatics', animal_handling: 'Animal Handling',
-  arcana: 'Arcana', athletics: 'Athletics', deception: 'Deception',
-  history: 'History', insight: 'Insight', intimidation: 'Intimidation',
-  investigation: 'Investigation', medicine: 'Medicine', nature: 'Nature',
-  perception: 'Perception', performance: 'Performance', persuasion: 'Persuasion',
-  religion: 'Religion', sleight_of_hand: 'Sleight of Hand',
-  stealth: 'Stealth', survival: 'Survival',
-};
-
-const SAVE_LABELS = { str: 'STR', dex: 'DEX', con: 'CON', int: 'INT', wis: 'WIS', cha: 'CHA' };
-
-function abilityMod(score) {
-  if (typeof score !== 'number') return null;
-  return Math.floor((score - 10) / 2);
-}
-
-function signedMod(mod) {
-  if (mod == null) return '';
-  return mod >= 0 ? `+${mod}` : `${mod}`;
-}
-
-function formatKeyValueList(obj, labels) {
-  if (!obj || typeof obj !== 'object') return '';
-  return Object.entries(obj)
-    .filter(([, v]) => v != null && v !== '')
-    .map(([k, v]) => `${labels[k] || k} ${v}`)
-    .join(', ');
-}
-
-function StatBlockModal({ monster, onClose }) {
-  useEffect(() => {
-    const onKey = (e) => { if (e.key === 'Escape') onClose(); };
-    document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
-  }, [onClose]);
-
-  const identity = [
-    [monster.size, monster.type].filter(Boolean).join(' '),
-    monster.alignment,
-  ].filter(Boolean).join(', ');
-
-  const savesLine  = formatKeyValueList(monster.saves,  SAVE_LABELS);
-  const skillsLine = formatKeyValueList(monster.skills, SKILL_LABELS);
-
-  const sensesParts = [];
-  if (monster.senses)             sensesParts.push(monster.senses);
-  if (typeof monster.passive === 'number') sensesParts.push(`passive Perception ${monster.passive}`);
-  const sensesLine = sensesParts.join(', ');
-
-  const hasAnyData =
-    !!identity || monster.ac != null || monster.hp?.average != null ||
-    !!monster.speed || !!monster.cr || (monster.traits?.length || 0) > 0 ||
-    (monster.actions?.length || 0) > 0 || (monster.legendaryActions?.length || 0) > 0;
-
-  return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center px-4 py-6"
-      style={{ backgroundColor: 'rgba(0, 0, 0, 0.65)' }}
-      onClick={onClose}
-    >
-      <div
-        className="bg-card border border-gold-strong rounded-sm max-w-2xl w-full max-h-[85vh] overflow-y-auto scrollbar-thin"
-        style={{ boxShadow: '0 20px 60px rgba(0,0,0,0.7), 0 0 0 1px rgba(var(--color-gold-rgb), 0.15)' }}
-        onClick={e => e.stopPropagation()}
-      >
-        {/* Header */}
-        <div className="px-5 pt-5 pb-3 flex items-start justify-between gap-3 border-b border-gold">
-          <div className="min-w-0">
-            <h3 className="font-display text-xl text-gold uppercase tracking-wider truncate">
-              {monster.name || '— unnamed —'}
-            </h3>
-            {identity && (
-              <p className="text-fade text-sm italic mt-0.5">{identity}</p>
-            )}
-            {monster.source && (
-              <p className="text-fade text-[10px] font-cmd uppercase tracking-wider mt-1">source · {monster.source}</p>
-            )}
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="Close stat block"
-            className="text-fade hover:text-parchment text-lg leading-none px-2 py-1 transition flex-shrink-0"
-          >
-            ✕
-          </button>
-        </div>
-
-        {!hasAnyData ? (
-          <div className="px-5 py-8 text-center">
-            <p className="text-fade italic text-sm">
-              No stat-block data yet. Use <span className="text-gold">+ Add monster → Import from 5e.tools URL</span> to populate
-              an existing monster, or wait for the manual editor (slice 5).
-            </p>
-          </div>
-        ) : (
-          <div className="px-5 py-4 space-y-4 text-sm">
-            {/* Combat line */}
-            <div className="space-y-1">
-              {monster.ac != null && (
-                <div><span className="font-display text-gold uppercase tracking-wider text-xs">Armor Class</span> <span className="text-parchment">{monster.ac}</span></div>
-              )}
-              {monster.hp && (
-                <div>
-                  <span className="font-display text-gold uppercase tracking-wider text-xs">Hit Points</span>{' '}
-                  <span className="text-parchment">
-                    {monster.hp.average != null ? monster.hp.average : '—'}
-                    {monster.hp.formula ? ` (${monster.hp.formula})` : ''}
-                  </span>
-                </div>
-              )}
-              {monster.speed && (
-                <div><span className="font-display text-gold uppercase tracking-wider text-xs">Speed</span> <span className="text-parchment">{monster.speed}</span></div>
-              )}
-            </div>
-
-            {/* Ability score grid */}
-            {monster.abilities && (
-              <div className="border-y border-gold py-3">
-                <div className="grid grid-cols-6 gap-2 text-center">
-                  {ABILITIES.map(({ key, label }) => {
-                    const score = monster.abilities[key];
-                    const mod = abilityMod(score);
-                    return (
-                      <div key={key}>
-                        <div className="font-display text-xs text-gold uppercase tracking-wider">{label}</div>
-                        <div className="text-parchment text-base font-cmd mt-0.5">{score ?? '—'}</div>
-                        <div className="text-fade text-xs font-cmd">{mod != null ? `(${signedMod(mod)})` : ''}</div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
-
-            {/* Attribute summaries */}
-            <div className="space-y-1">
-              {savesLine && (
-                <div><span className="font-display text-gold uppercase tracking-wider text-xs">Saving Throws</span> <span className="text-parchment">{savesLine}</span></div>
-              )}
-              {skillsLine && (
-                <div><span className="font-display text-gold uppercase tracking-wider text-xs">Skills</span> <span className="text-parchment">{skillsLine}</span></div>
-              )}
-              {sensesLine && (
-                <div><span className="font-display text-gold uppercase tracking-wider text-xs">Senses</span> <span className="text-parchment">{sensesLine}</span></div>
-              )}
-              {monster.languages && (
-                <div><span className="font-display text-gold uppercase tracking-wider text-xs">Languages</span> <span className="text-parchment">{monster.languages}</span></div>
-              )}
-              {monster.cr && (
-                <div><span className="font-display text-gold uppercase tracking-wider text-xs">Challenge</span> <span className="text-parchment">{monster.cr}</span></div>
-              )}
-            </div>
-
-            <StatBlockEntries title="Traits"            items={monster.traits} />
-            <StatBlockEntries title="Actions"           items={monster.actions} />
-            <StatBlockEntries title="Legendary Actions" items={monster.legendaryActions} />
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-function StatBlockEntries({ title, items }) {
-  if (!Array.isArray(items) || items.length === 0) return null;
-  return (
-    <div className="pt-3 border-t border-gold">
-      <h4 className="font-display text-gold uppercase tracking-wider text-sm mb-2">{title}</h4>
-      <div className="space-y-3">
-        {items.map(item => (
-          <div key={item.id || item.name}>
-            <span className="font-display text-parchment italic">{item.name}.</span>{' '}
-            {(item.description || '').split(/\n\n+/).map((para, i) => (
-              <span key={i} className="text-parchment">
-                {i === 0 ? para : <><br /><br />{para}</>}
-              </span>
-            ))}
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
+// StatBlockModal moved to src/views/StatBlockModal.jsx in v0.9 once edit
+// mode landed and the implementation outgrew this file. Import at the
+// top of the file; the prop signature is unchanged except for the new
+// `setMonster` updater used by edit mode.

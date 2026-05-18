@@ -287,6 +287,19 @@ export default function App() {
       : ms);
   };
 
+  // Generic edit hook used by the stat-block editor. Accepts either a
+  // patch object (shallow merge) or an updater function (next = fn(cur));
+  // matches the shape consumers expect from React state setters so the
+  // modal can pass `setMonster` straight to its sub-fields.
+  const updateMonster = (id, updater) => {
+    setMonsters(ms => {
+      const cur = ms[id];
+      if (!cur) return ms;
+      const next = typeof updater === 'function' ? updater(cur) : { ...cur, ...updater };
+      return { ...ms, [id]: next };
+    });
+  };
+
   const moveMonsterToFolder = (id, folderId) => {
     setMonsters(ms => ms[id]
       ? ({ ...ms, [id]: { ...ms[id], folderId: folderId || null } })
@@ -348,6 +361,7 @@ export default function App() {
           onDeleteMonster={deleteMonster}
           onToggleMonsterActive={toggleMonsterActive}
           onMoveMonsterToFolder={moveMonsterToFolder}
+          onUpdateMonster={updateMonster}
           onAddFolder={addMonsterFolder}
           onRenameFolder={renameMonsterFolder}
           onDeleteFolder={deleteMonsterFolder}
