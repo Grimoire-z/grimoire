@@ -32,12 +32,22 @@ export function compose({ action, activeMods, modParams, modifiers, custom }) {
   // it unset and gets the bound-character commands. Spell stays on `!cast`
   // because DM Roll doesn't surface spell buttons today; revisit when it
   // does and we'll want `!i cast`.
+  //
+  // `action.outOfTurn` + `action.combatantName` flip attack-kind commands
+  // to Avrae's `!i aoo "<combatant>" "<action>"` form — for reactions and
+  // opportunity attacks where a named creature acts when it isn't its
+  // current init turn. Only attacks have a clean OOT syntax in Avrae;
+  // saves/checks fall back to the regular init-aware form even when the
+  // flag is set, since their OOT call patterns aren't standardized.
   const init = !!action.initContext;
+  const aoo  = init && !!action.outOfTurn && !!action.combatantName;
   let cmd;
-  if      (action.kind === 'attack') cmd = init ? `!i a "${action.id}"`  : `!attack "${action.id}"`;
+  if      (action.kind === 'attack') cmd = aoo  ? `!i aoo "${action.combatantName}" "${action.id}"`
+                                              : init ? `!i a "${action.id}"`
+                                                     : `!attack "${action.id}"`;
   else if (action.kind === 'spell')  cmd = `!cast "${action.id}"`;
-  else if (action.kind === 'save')   cmd = init ? `!i s ${action.id}`    : `!save ${action.id}`;
-  else                                cmd = init ? `!i c ${action.id}`    : `!check ${action.id}`;
+  else if (action.kind === 'save')   cmd = init ? `!i s ${action.id}` : `!save ${action.id}`;
+  else                                cmd = init ? `!i c ${action.id}` : `!check ${action.id}`;
 
   const argParts = [];
   if (action.kind === 'spell' && action.upcastTo > action.level) {

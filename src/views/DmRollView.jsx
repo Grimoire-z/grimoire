@@ -11,7 +11,7 @@
 // `ComposerBar` (composed cmd + history) from `RollChrome.jsx`, so the
 // experience is identical to player Roll aside from the central area.
 
-import { useCallback } from 'react';
+import { useCallback, useState } from 'react';
 import { compose } from '../composer.js';
 import { ActionCard } from '../components.jsx';
 import { RollSidePanel, ComposerBar } from './RollChrome.jsx';
@@ -87,6 +87,20 @@ export default function DmRollView({
     setTimeout(() => setCopied(false), 1500);
   }, [setComposed, setHistory, setCopied]);
 
+  // Per-monster "out of turn" toggle. Ephemeral on purpose — OOT is a
+  // moment-to-moment combat state (you flip it on for a reaction, off
+  // again for the next normal turn), not a stored property of the
+  // monster. Resets when DmRollView unmounts (tab/mode change).
+  const [outOfTurnIds, setOutOfTurnIds] = useState({});
+  const toggleOutOfTurn = useCallback((monsterId) => {
+    setOutOfTurnIds(prev => {
+      const next = { ...prev };
+      if (next[monsterId]) delete next[monsterId];
+      else next[monsterId] = true;
+      return next;
+    });
+  }, []);
+
   // Sort active monsters by name for stable layout.
   const sorted = monsters.slice().sort((a, b) => (a.name || '').localeCompare(b.name || ''));
 
@@ -107,6 +121,8 @@ export default function DmRollView({
                   monster={m}
                   fire={fire}
                   onInitAdd={() => fireInitAdd(m)}
+                  outOfTurn={!!outOfTurnIds[m.id]}
+                  onToggleOutOfTurn={() => toggleOutOfTurn(m.id)}
                 />
               ))}
             </div>
@@ -133,7 +149,7 @@ export default function DmRollView({
   );
 }
 
-function MonsterRollCard({ monster, fire, onInitAdd }) {
+function MonsterRollCard({ monster, fire, onInitAdd, outOfTurn, onToggleOutOfTurn }) {
   const summary = compactSummary(monster);
   const saveEntries  = monster.saves  ? Object.entries(monster.saves).filter(([, v]) => v != null && v !== '')  : [];
   const skillEntries = monster.skills ? Object.entries(monster.skills).filter(([, v]) => v != null && v !== '') : [];
@@ -146,11 +162,16 @@ function MonsterRollCard({ monster, fire, onInitAdd }) {
   // actions — pass the original action name (e.g. "Tail Slap"), not the
   // slugified id, so the lookup succeeds. `initContext: true` flips
   // compose() from the player `!attack` form to the init-aware `!i a`.
+  // When the per-card `outOfTurn` checkbox is on, compose() further
+  // flips to `!i aoo "<combatant>" "<action>"` so a specific monster
+  // can roll attacks while another combatant is current in init.
   const onAction = (action) => fire({
     kind: 'attack',
     id: action.name,
-    label: `${monster.name} · ${action.name}`,
+    label: `${monster.name} · ${action.name}${outOfTurn ? ' (OOT)' : ''}`,
     initContext: true,
+    outOfTurn,
+    combatantName: monster.name,
   });
 
   return (
@@ -162,14 +183,38 @@ function MonsterRollCard({ monster, fire, onInitAdd }) {
           </div>
           {summary && <div className="text-fade text-xs italic truncate">{summary}</div>}
         </div>
-        <button
-          type="button"
-          onClick={onInitAdd}
-          title={`!i madd "${monster.name}"`}
-          className="text-xs font-cmd uppercase tracking-wider text-gold border border-gold px-2 py-1 hover:bg-card-hover transition flex-shrink-0"
-        >
-          ↻ init add
-        </button>
+        <div className="flex items-center gap-3 flex-shrink-0">
+          <label
+            className="inline-flex items-center gap-2 cursor-pointer select-none"
+            title="When checked, attack buttons compose !i aoo so this monster acts out of turn (opportunity attacks, reactions). Save/check buttons aren't affected — Avrae's init save/check don't have a standard OOT form."
+          >
+            <span
+              className={`w-3.5 h-3.5 border rounded-sm flex items-center justify-center text-xs flex-shrink-0 ${
+                outOfTurn ? 'border-gold-strong' : 'border-gold'
+              }`}
+              style={outOfTurn ? { backgroundColor: 'var(--color-gold)', color: 'var(--color-bg)' } : {}}
+            >
+              {outOfTurn && '✓'}
+            </span>
+            <span className={`text-xs font-cmd uppercase tracking-wider ${outOfTurn ? 'text-gold' : 'text-fade'}`}>
+              Out of turn
+            </span>
+            <input
+              type="checkbox"
+              checked={outOfTurn}
+              onChange={onToggleOutOfTurn}
+              className="sr-only"
+            />
+          </label>
+          <button
+            type="button"
+            onClick={onInitAdd}
+            title={`!i madd "${monster.name}"`}
+            className="text-xs font-cmd uppercase tracking-wider text-gold border border-gold px-2 py-1 hover:bg-card-hover transition"
+          >
+            ↻ init add
+          </button>
+        </div>
       </div>
 
       <div className="px-4 py-3 space-y-4">
