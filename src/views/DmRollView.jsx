@@ -208,6 +208,7 @@ function MonsterRollCard({ monster, fire, onInitAdd }) {
                   kind: 'save',
                   id: ability,
                   label: `${monster.name} · ${SAVE_LABELS[ability] || ability.toUpperCase()} save`,
+                  initContext: true,
                 })}
               />
             ))}
@@ -225,6 +226,7 @@ function MonsterRollCard({ monster, fire, onInitAdd }) {
                   kind: 'check',
                   id: skill,
                   label: `${monster.name} · ${SKILL_LABELS[skill] || skill}`,
+                  initContext: true,
                 })}
               />
             ))}

@@ -29,13 +29,15 @@ export function compose({ action, activeMods, modParams, modifiers, custom }) {
   // `action.initContext: true` switches to Avrae's initiative-aware variant
   // of the command — used by DM Roll where rolls go through the current
   // combatant in init, not the user's bound character. Player Roll leaves
-  // it unset and gets the bound-character commands.
+  // it unset and gets the bound-character commands. Spell stays on `!cast`
+  // because DM Roll doesn't surface spell buttons today; revisit when it
+  // does and we'll want `!i cast`.
   const init = !!action.initContext;
   let cmd;
   if      (action.kind === 'attack') cmd = init ? `!i a "${action.id}"`  : `!attack "${action.id}"`;
   else if (action.kind === 'spell')  cmd = `!cast "${action.id}"`;
-  else if (action.kind === 'save')   cmd = `!save ${action.id}`;
-  else                                cmd = `!check ${action.id}`;
+  else if (action.kind === 'save')   cmd = init ? `!i s ${action.id}`    : `!save ${action.id}`;
+  else                                cmd = init ? `!i c ${action.id}`    : `!check ${action.id}`;
 
   const argParts = [];
   if (action.kind === 'spell' && action.upcastTo > action.level) {
