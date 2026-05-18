@@ -18,6 +18,22 @@ import { RollSidePanel, ComposerBar } from './RollChrome.jsx';
 
 const SAVE_LABELS = { str: 'STR', dex: 'DEX', con: 'CON', int: 'INT', wis: 'WIS', cha: 'CHA' };
 
+// First-letter acronym of a multi-word name, uppercased. Used as the
+// combatant identifier in emitted commands so a fight against "Adult
+// Silver Dragon" types out as `!i offturnattack "ASD" ...` instead of
+// re-typing the full name in every command. Single-word names collapse
+// to a single letter (Goblin → G). UI/history labels keep the full
+// name; only the command arg is acronymed.
+function acronym(name) {
+  if (!name) return '';
+  return name
+    .split(/\s+/)
+    .filter(Boolean)
+    .map(w => w[0])
+    .join('')
+    .toUpperCase();
+}
+
 // 5e.tools skill keys come in two flavors (snake and camel) depending
 // on the source; we hand the raw key to Avrae's `!check` (its matcher
 // is forgiving) but display them readably.
@@ -70,25 +86,22 @@ export default function DmRollView({
 
   // Init-add bypasses the regular composer pipeline — `!i madd` isn't
   // one of the kind-driven commands and doesn't take targets/modifiers.
-  // `!i madd "<name>"` is Avrae's "monster add" subcommand: looks up
-  // the monster in Avrae's bestiary, auto-loads stats + actions, rolls
-  // init off the monster's Dex mod. That makes downstream `!attack
-  // "<action>"` calls land against a populated action list — much
-  // richer than a generic `!init add`-only combatant.
-  //
-  // When the per-card instance number is set, we pass it through the
-  // `-name` flag so Avrae registers the combatant with a specific
-  // suffixed name (`Goblin1`, `Goblin2`, …) — required for OOT
-  // commands to target the right instance later.
-  const fireInitAdd = useCallback((monster, instanceNumber) => {
-    const named = instanceNumber ? `${monster.name}${instanceNumber}` : null;
-    const cmd = named
-      ? `!i madd "${monster.name}" -name "${named}"`
-      : `!i madd "${monster.name}"`;
+  // `!i madd "<lookup>"` is Avrae's "monster add" subcommand: looks up
+  // the monster in Avrae's bestiary by name, auto-loads stats + actions,
+  // rolls init off the monster's Dex mod. The `-name "<cmdName>"` flag
+  // registers the combatant under our acronym (`ASD`, `ASD1`, …) so OOT
+  // commands later can target the exact instance. We always pass `-name`
+  // when an acronym exists so the registered name is predictable —
+  // letting Avrae default would name it "Adult Silver Dragon" which we'd
+  // then have to retype in every OOT command.
+  const fireInitAdd = useCallback((lookupName, cmdName, displayName) => {
+    const cmd = cmdName && cmdName !== lookupName
+      ? `!i madd "${lookupName}" -name "${cmdName}"`
+      : `!i madd "${lookupName}"`;
     setComposed(cmd);
     setHistory(prev => [{
       time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      label: `${named || monster.name} · init add`, cmd,
+      label: `${displayName || lookupName} · init add`, cmd,
     }, ...prev].slice(0, 8));
     if (navigator.clipboard) navigator.clipboard.writeText(cmd).catch(() => {});
     setCopied(true);
@@ -175,20 +188,28 @@ export default function DmRollView({
                 </div>
               )}
               <div className="space-y-5">
-                {sorted.map(m => (
-                  <MonsterRollCard
-                    key={m.id}
-                    monster={m}
-                    fire={fire}
-                    onInitAdd={() => fireInitAdd(m, instanceById[m.id] || null)}
-                    outOfTurn={!!outOfTurnIds[m.id]}
-                    onToggleOutOfTurn={() => toggleOutOfTurn(m.id)}
-                    collapsed={!!collapsedIds[m.id]}
-                    onToggleCollapsed={() => toggleCollapsed(m.id)}
-                    instanceNumber={instanceById[m.id] || null}
-                    onInstanceNumberChange={(n) => setInstance(m.id, n)}
-                  />
-                ))}
+                {sorted.map(m => {
+                  const instance    = instanceById[m.id] || null;
+                  const acro        = acronym(m.name);
+                  const cmdName     = acro ? (instance ? `${acro}${instance}` : acro) : (m.name || '');
+                  const displayName = instance ? `${m.name} ${instance}` : m.name;
+                  return (
+                    <MonsterRollCard
+                      key={m.id}
+                      monster={m}
+                      cmdName={cmdName}
+                      displayName={displayName}
+                      fire={fire}
+                      onInitAdd={() => fireInitAdd(m.name, cmdName, displayName)}
+                      outOfTurn={!!outOfTurnIds[m.id]}
+                      onToggleOutOfTurn={() => toggleOutOfTurn(m.id)}
+                      collapsed={!!collapsedIds[m.id]}
+                      onToggleCollapsed={() => toggleCollapsed(m.id)}
+                      instanceNumber={instance}
+                      onInstanceNumberChange={(n) => setInstance(m.id, n)}
+                    />
+                  );
+                })}
               </div>
             </div>
           )}
@@ -214,7 +235,13 @@ export default function DmRollView({
   );
 }
 
-function MonsterRollCard({ monster, fire, onInitAdd, outOfTurn, onToggleOutOfTurn, collapsed, onToggleCollapsed, instanceNumber, onInstanceNumberChange }) {
+function MonsterRollCard({
+  monster, cmdName, displayName,
+  fire, onInitAdd,
+  outOfTurn, onToggleOutOfTurn,
+  collapsed, onToggleCollapsed,
+  instanceNumber, onInstanceNumberChange,
+}) {
   const summary = compactSummary(monster);
   const saveEntries  = monster.saves  ? Object.entries(monster.saves).filter(([, v]) => v != null && v !== '')  : [];
   const skillEntries = monster.skills ? Object.entries(monster.skills).filter(([, v]) => v != null && v !== '') : [];
@@ -223,26 +250,27 @@ function MonsterRollCard({ monster, fire, onInitAdd, outOfTurn, onToggleOutOfTur
 
   const hasAnyButtons = actions.length || legendaryActions.length || saveEntries.length || skillEntries.length;
 
-  // Instance-suffixed display + combatant name. The suffix only matters
-  // where the combatant *name* shows up in a command — init-add and the
-  // `!i offturn*` family. The in-turn `!i a`/`!i s`/`!i c` commands rely
-  // on Avrae's "current combatant" so they don't need the suffix.
-  const instanceName = instanceNumber ? `${monster.name}${instanceNumber}` : monster.name;
+  // `cmdName` is the acronymed combatant identifier ("ASD" or "ASD1");
+  // `displayName` is the human-readable form for history labels.
+  // The suffix only matters where the combatant *name* appears in a
+  // command — init-add and the `!i offturn*` family. The in-turn
+  // `!i a`/`!i s`/`!i c` commands rely on Avrae's "current combatant"
+  // pointer, so the suffix is irrelevant there.
 
   // Avrae's `!i a` looks up by name on the current combatant's loaded
   // actions — pass the original action name (e.g. "Tail Slap"), not the
   // slugified id, so the lookup succeeds. `initContext: true` flips
   // compose() from the player `!attack` form to the init-aware `!i a`.
   // When the per-card `outOfTurn` checkbox is on, compose() further
-  // flips to `!i offturnattack "<combatant>" "<action>"` so a specific
+  // flips to `!i offturnattack "<cmdName>" "<action>"` so a specific
   // monster can attack while another combatant is current in init.
   const onAction = (action) => fire({
     kind: 'attack',
     id: action.name,
-    label: `${instanceName} · ${action.name}${outOfTurn ? ' (OOT)' : ''}`,
+    label: `${displayName} · ${action.name}${outOfTurn ? ' (OOT)' : ''}`,
     initContext: true,
     outOfTurn,
-    combatantName: instanceName,
+    combatantName: cmdName,
   });
 
   return (
@@ -268,9 +296,10 @@ function MonsterRollCard({ monster, fire, onInitAdd, outOfTurn, onToggleOutOfTur
         <div className="flex items-center gap-3 flex-shrink-0">
           <label
             className="inline-flex items-center gap-1.5 text-xs font-cmd uppercase tracking-wider text-fade cursor-pointer"
-            title={instanceNumber
-              ? `Instance number. Suffixed onto the monster name in init-add and out-of-turn commands — this card resolves as "${instanceName}".`
-              : 'Instance number — pick 1–10 to suffix this card\'s name in init-add and OOT commands (Goblin → Goblin1). Useful when running several of the same monster.'}
+            title={
+              `Instance number. The monster's name is acronymed in commands (e.g. "Adult Silver Dragon" → "ASD"); ` +
+              `this number suffixes it. This card resolves as "${cmdName || '—'}" in init-add and OOT commands.`
+            }
           >
             <span className={instanceNumber ? 'text-gold' : ''}>#</span>
             <select
@@ -309,8 +338,8 @@ function MonsterRollCard({ monster, fire, onInitAdd, outOfTurn, onToggleOutOfTur
           <button
             type="button"
             onClick={onInitAdd}
-            title={instanceNumber
-              ? `!i madd "${monster.name}" -name "${instanceName}"`
+            title={cmdName && cmdName !== monster.name
+              ? `!i madd "${monster.name}" -name "${cmdName}"`
               : `!i madd "${monster.name}"`}
             className="text-xs font-cmd uppercase tracking-wider text-gold border border-gold px-2 py-1 hover:bg-card-hover transition"
           >
@@ -355,10 +384,10 @@ function MonsterRollCard({ monster, fire, onInitAdd, outOfTurn, onToggleOutOfTur
                 onClick={() => fire({
                   kind: 'save',
                   id: ability,
-                  label: `${instanceName} · ${SAVE_LABELS[ability] || ability.toUpperCase()} save${outOfTurn ? ' (OOT)' : ''}`,
+                  label: `${displayName} · ${SAVE_LABELS[ability] || ability.toUpperCase()} save${outOfTurn ? ' (OOT)' : ''}`,
                   initContext: true,
                   outOfTurn,
-                  combatantName: instanceName,
+                  combatantName: cmdName,
                 })}
               />
             ))}
@@ -375,10 +404,10 @@ function MonsterRollCard({ monster, fire, onInitAdd, outOfTurn, onToggleOutOfTur
                 onClick={() => fire({
                   kind: 'check',
                   id: skill,
-                  label: `${instanceName} · ${SKILL_LABELS[skill] || skill}${outOfTurn ? ' (OOT)' : ''}`,
+                  label: `${displayName} · ${SKILL_LABELS[skill] || skill}${outOfTurn ? ' (OOT)' : ''}`,
                   initContext: true,
                   outOfTurn,
-                  combatantName: instanceName,
+                  combatantName: cmdName,
                 })}
               />
             ))}
