@@ -1,4 +1,4 @@
-const { app, BrowserWindow, shell, ipcMain } = require('electron');
+const { app, BrowserWindow, shell, ipcMain, net } = require('electron');
 const path = require('path');
 const { execFile } = require('node:child_process');
 const fs = require('node:fs');
@@ -238,21 +238,52 @@ function parseFiveEtoolsUrl(url) {
   return { name, source };
 }
 
+// Try several mirrors in sequence. 5e.tools itself sits behind Cloudflare
+// and 403s requests without browser-like headers (anti-hotlink). The
+// public 5etools-mirror-* GitHub Pages sites don't gate access and are the
+// canonical fallback. Some less-common sources (homebrew supplements,
+// recent releases) only live on a subset of mirrors, so we try each and
+// return the first that responds with JSON.
+const BESTIARY_HOSTS = [
+  'https://5e.tools/data/bestiary',
+  'https://5etools-mirror-3.github.io/data/bestiary',
+  'https://5etools-mirror-2.github.io/data/bestiary',
+  'https://5etools-mirror-1.github.io/data/bestiary',
+];
+
+const BROWSERY_HEADERS = {
+  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36',
+  'Accept': 'application/json,*/*;q=0.8',
+  'Accept-Language': 'en-US,en;q=0.9',
+  'Referer': 'https://5e.tools/bestiary.html',
+};
+
+// Uses Electron's `net.fetch` (Chromium networking) rather than the global
+// `fetch` (Node's undici). Cloudflare on 5e.tools blocks bare Node fetches
+// even with browser-like headers — TLS fingerprint and request semantics
+// betray them. net.fetch routes through Chromium's stack so the request
+// looks identical to one from a real browser tab, which passes the bot
+// check. Mirrors fall back to the GitHub Pages copies (no Cloudflare).
 async function fetchBestiary(source) {
-  const url = `https://5e.tools/data/bestiary/bestiary-${source.toLowerCase()}.json`;
-  let res;
-  try {
-    res = await fetch(url, { headers: { 'User-Agent': 'grimoire-app' } });
-  } catch (e) {
-    throw new Error(`network error fetching ${url}: ${e.message}`);
-  }
-  if (!res.ok) {
-    if (res.status === 404) {
-      throw new Error(`source "${source}" not found on 5e.tools (404). Check the source code in the URL.`);
+  const filename = `bestiary-${source.toLowerCase()}.json`;
+  const failures = [];
+  for (const host of BESTIARY_HOSTS) {
+    const url = `${host}/${filename}`;
+    try {
+      console.log('[grimoire] 5etools fetch try:', url);
+      const res = await net.fetch(url, { headers: BROWSERY_HEADERS });
+      if (res.ok) {
+        console.log('[grimoire] 5etools fetch ok:', url);
+        return await res.json();
+      }
+      failures.push(`${url} → ${res.status} ${res.statusText}`);
+    } catch (e) {
+      failures.push(`${url} → ${e.message}`);
     }
-    throw new Error(`5e.tools returned ${res.status} ${res.statusText} for ${url}`);
   }
-  return res.json();
+  throw new Error(
+    `could not fetch ${filename} from any 5e.tools mirror — source "${source}" may not exist on the mirrors that have it open, or all hosts are down right now.\n\n${failures.join('\n')}`
+  );
 }
 
 function findMonster(name, source, bestiary) {
