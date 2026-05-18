@@ -165,10 +165,6 @@ After parsing, `mapSpells` sorts each level's spell array alphabetically by disp
 
 The Character view's PDF import section has a diagnostics panel with field/widget filters — useful when DDB shifts the layout again.
 
-## Open work / known stubs
-
-- Single-character only (no vault/picker)
-
 ## Settled-by-design (don't re-pitch)
 
 - **Releases are unsigned.** Grimoire is a personal app for the owner's own machines; the SmartScreen first-run prompt is acceptable, and an EV/OV cert isn't worth the recurring cost. The build still runs `signtool.exe` for a placeholder signature so the resource section is well-formed.
@@ -187,7 +183,7 @@ The Character view's PDF import section has a diagnostics panel with field/widge
 - New device setup: `gh auth login` → `git clone` → `npm install` → `npm run electron:dev`
 - Prereqs: Node ≥22.13 (Node 24 LTS recommended — ESLint 10 / Vite 8 / pdfjs-dist 5.7 EBADENGINE warn below that), git, gh — all installable via `winget`
 - Workflow across machines: ask for a commit + push when context-switching; `git pull` on the other side picks up everything including this CLAUDE.md
-- localStorage character/modifier/target data does NOT sync across devices — that's a separate feature still on the TODO list
+- localStorage data (character vault, modifiers, targets, folders, settings) doesn't sync automatically across machines — use Settings → Backup & Restore for manual JSON export/import. Automatic sync is settled-by-design above, not an open item.
 
 ## Releases
 
