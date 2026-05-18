@@ -65,11 +65,27 @@ export default function BestiaryView({
     }
     const result = await bridge.importMonsterFrom5etools(url);
     if (!result.ok) throw new Error(result.error);
+    addAndClose(result.monster);
+  };
+
+  // "Import from JSON" branch — paste or file. The parser + mapper live
+  // in main (reusing `mapFiveEtoolsMonster` from the URL importer), so
+  // the renderer just hands over the raw text and surfaces errors.
+  const onPickJson = async (jsonText) => {
+    if (!bridge?.importMonsterFromJson) {
+      throw new Error('JSON import requires the desktop app build');
+    }
+    const result = await bridge.importMonsterFromJson(jsonText);
+    if (!result.ok) throw new Error(result.error);
+    addAndClose(result.monster);
+  };
+
+  const addAndClose = (mapped) => {
     // Mapped shape has the stat-block fields but no id/active/folderId;
     // overlay onto a blank so the bestiary invariants stay intact.
     const monster = {
-      ...makeBlankMonster(result.monster.name || 'Imported Monster'),
-      ...result.monster,
+      ...makeBlankMonster(mapped.name || 'Imported Monster'),
+      ...mapped,
     };
     setPicking(false);
     onAddMonster(monster);
@@ -171,6 +187,7 @@ export default function BestiaryView({
           onCancel={() => setPicking(false)}
           onBlank={onPickBlank}
           on5etools={onPick5etools}
+          onJson={onPickJson}
         />
       )}
 
@@ -194,15 +211,20 @@ export default function BestiaryView({
 // New monsters land ungrouped by default; the user can move them via
 // the card's folder picker after.
 
-function AddMonsterPicker({ onCancel, onBlank, on5etools }) {
-  const [mode,  setMode]  = useState('choose');  // 'choose' | 'url'
-  const [url,   setUrl]   = useState('');
-  const [busy,  setBusy]  = useState(false);
-  const [error, setError] = useState(null);
-  const urlRef = useRef(null);
+function AddMonsterPicker({ onCancel, onBlank, on5etools, onJson }) {
+  const [mode,     setMode]     = useState('choose');  // 'choose' | 'url' | 'json'
+  const [url,      setUrl]      = useState('');
+  const [jsonText, setJsonText] = useState('');
+  const [fileName, setFileName] = useState('');
+  const [busy,     setBusy]     = useState(false);
+  const [error,    setError]    = useState(null);
+  const urlRef  = useRef(null);
+  const jsonRef = useRef(null);
+  const fileRef = useRef(null);
 
   useEffect(() => {
-    if (mode === 'url') urlRef.current?.focus();
+    if (mode === 'url')  urlRef.current?.focus();
+    if (mode === 'json') jsonRef.current?.focus();
   }, [mode]);
 
   useEffect(() => {
@@ -214,15 +236,36 @@ function AddMonsterPicker({ onCancel, onBlank, on5etools }) {
   const submitUrl = async () => {
     const trimmed = url.trim();
     if (!trimmed) return;
-    setBusy(true);
-    setError(null);
+    setBusy(true); setError(null);
+    try { await on5etools(trimmed); }
+    catch (e) { setError(e.message || String(e)); }
+    finally   { setBusy(false); }
+  };
+
+  const submitJson = async () => {
+    const trimmed = jsonText.trim();
+    if (!trimmed) return;
+    setBusy(true); setError(null);
+    try { await onJson(trimmed); }
+    catch (e) { setError(e.message || String(e)); }
+    finally   { setBusy(false); }
+  };
+
+  // File picker → read text → fill the textarea. We don't auto-submit
+  // because the user might want to scan or edit the JSON first; the
+  // Import button is the explicit "go" once content is in the textarea.
+  const onPickFile = () => fileRef.current?.click();
+  const onFileChange = async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = ''; // allow re-picking the same file later
+    if (!file) return;
     try {
-      await on5etools(trimmed);
-      // on5etools calls setPicking(false) on success, which unmounts us.
-    } catch (e) {
-      setError(e.message || String(e));
-    } finally {
-      setBusy(false);
+      const text = await file.text();
+      setJsonText(text);
+      setFileName(file.name);
+      setError(null);
+    } catch (err) {
+      setError(err.message || String(err));
     }
   };
 
@@ -271,6 +314,19 @@ function AddMonsterPicker({ onCancel, onBlank, on5etools }) {
                 <span className="font-cmd">5e.tools/bestiary.html#goblin_mm</span> — main process fetches the JSON, normalizes the stat block, stores it.
               </div>
             </button>
+            <button
+              type="button"
+              onClick={() => setMode('json')}
+              className="btn-action w-full text-left p-3 border rounded-sm transition border-gold bg-grimoire hover:bg-card-hover"
+            >
+              <div className="font-display text-sm text-gold uppercase tracking-wider mb-1">
+                Import from JSON
+              </div>
+              <div className="text-fade text-xs italic">
+                Paste a 5e.tools monster object directly, or load it from a <span className="font-cmd">.json</span> file.
+                Useful for homebrew not on any mirror, or when the URL importer can't reach the host.
+              </div>
+            </button>
           </div>
         )}
 
@@ -310,6 +366,67 @@ function AddMonsterPicker({ onCancel, onBlank, on5etools }) {
                 ← back
               </button>
             </div>
+            {error && (
+              <div className="text-crimson text-xs italic leading-relaxed">
+                {error}
+              </div>
+            )}
+          </div>
+        )}
+
+        {mode === 'json' && (
+          <div className="space-y-3 mb-4">
+            <label className="block">
+              <span className="text-fade text-xs uppercase tracking-wider block mb-1">Monster JSON</span>
+              <textarea
+                ref={jsonRef}
+                value={jsonText}
+                onChange={e => { setJsonText(e.target.value); if (fileName) setFileName(''); }}
+                placeholder='{"name": "Goblin", "source": "MM", "size": ["S"], ...}'
+                rows={10}
+                className="lined w-full font-cmd"
+                disabled={busy}
+              />
+            </label>
+            <div className="flex items-center gap-2 flex-wrap">
+              <button
+                type="button"
+                onClick={submitJson}
+                disabled={busy || !jsonText.trim()}
+                className="text-xs font-cmd uppercase tracking-wider border border-gold-strong px-3 py-1.5 hover:bg-active transition disabled:opacity-40"
+                style={{ color: 'var(--color-gold)' }}
+              >
+                {busy ? '… importing' : '↓ Import'}
+              </button>
+              <button
+                type="button"
+                onClick={onPickFile}
+                disabled={busy}
+                className="text-xs font-cmd uppercase tracking-wider text-fade hover:text-parchment border border-gold px-3 py-1.5 hover:bg-active transition disabled:opacity-50"
+              >
+                {fileName ? `↺ ${fileName}` : '📁 Load .json file'}
+              </button>
+              <input
+                ref={fileRef}
+                type="file"
+                accept=".json,application/json"
+                className="hidden"
+                onChange={onFileChange}
+              />
+              <button
+                type="button"
+                onClick={() => { setMode('choose'); setError(null); }}
+                disabled={busy}
+                className="text-xs font-cmd uppercase tracking-wider text-fade hover:text-parchment transition disabled:opacity-50 ml-auto"
+              >
+                ← back
+              </button>
+            </div>
+            <p className="text-fade text-[11px] italic leading-relaxed">
+              Accepts a bare monster object or a bestiary wrapper{' '}
+              <span className="font-cmd">{'{ "monster": [{...}] }'}</span>{' '}
+              with a single entry. Same shape the 5e.tools URL importer uses internally.
+            </p>
             {error && (
               <div className="text-crimson text-xs italic leading-relaxed">
                 {error}

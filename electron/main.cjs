@@ -470,3 +470,45 @@ ipcMain.handle('import-monster-from-5etools', async (_event, url) => {
     return { ok: false, error: e.message };
   }
 });
+
+// JSON import — accepts either a bare 5e.tools monster object
+// `{ name, source, ... }` or a bestiary wrapper `{ monster: [...] }`.
+// In the wrapper case we take the first (or only) entry rather than
+// guessing intent — multi-monster pastes get a clear error. Same
+// mapping pipeline as the URL importer, just without the fetch.
+ipcMain.handle('import-monster-from-json', async (_event, jsonText) => {
+  try {
+    if (typeof jsonText !== 'string' || jsonText.trim() === '') {
+      throw new Error('no JSON provided');
+    }
+    let parsed;
+    try { parsed = JSON.parse(jsonText); }
+    catch (e) { throw new Error(`invalid JSON: ${e.message}`); }
+    if (!parsed || typeof parsed !== 'object') {
+      throw new Error('JSON did not parse to an object');
+    }
+    let raw;
+    if (Array.isArray(parsed.monster)) {
+      if (parsed.monster.length === 0) {
+        throw new Error('bestiary JSON has an empty monster array');
+      }
+      if (parsed.monster.length > 1) {
+        throw new Error(
+          `bestiary JSON contains ${parsed.monster.length} monsters — paste a single monster object, ` +
+          `or extract just the one you want from the array`
+        );
+      }
+      raw = parsed.monster[0];
+    } else if (parsed.name && parsed.source) {
+      raw = parsed;
+    } else {
+      throw new Error(
+        `JSON doesn't look like a monster — expected an object with "name" and "source" fields, ` +
+        `or a bestiary wrapper { "monster": [{...}] }`
+      );
+    }
+    return { ok: true, monster: mapFiveEtoolsMonster(raw) };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+});

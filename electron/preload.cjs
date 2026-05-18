@@ -7,7 +7,8 @@ contextBridge.exposeInMainWorld('grimoire', {
   checkForUpdate:            ()    => ipcRenderer.invoke('check-for-update'),
   downloadAndInstall:        (asset) => ipcRenderer.invoke('download-and-install', asset),
   openExternal:              (url) => ipcRenderer.invoke('open-external', url),
-  importMonsterFrom5etools:  (url) => ipcRenderer.invoke('import-monster-from-5etools', url),
+  importMonsterFrom5etools:  (url)  => ipcRenderer.invoke('import-monster-from-5etools', url),
+  importMonsterFromJson:     (text) => ipcRenderer.invoke('import-monster-from-json', text),
   onDownloadProgress: (cb) => {
     const listener = (_e, data) => cb(data);
     ipcRenderer.on('update-download-progress', listener);
