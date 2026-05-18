@@ -26,8 +26,13 @@ export function composeFromMod(mod, paramSelections) {
 }
 
 export function compose({ action, activeMods, modParams, modifiers, custom }) {
+  // `action.initContext: true` switches to Avrae's initiative-aware variant
+  // of the command — used by DM Roll where rolls go through the current
+  // combatant in init, not the user's bound character. Player Roll leaves
+  // it unset and gets the bound-character commands.
+  const init = !!action.initContext;
   let cmd;
-  if      (action.kind === 'attack') cmd = `!attack "${action.id}"`;
+  if      (action.kind === 'attack') cmd = init ? `!i a "${action.id}"`  : `!attack "${action.id}"`;
   else if (action.kind === 'spell')  cmd = `!cast "${action.id}"`;
   else if (action.kind === 'save')   cmd = `!save ${action.id}`;
   else                                cmd = `!check ${action.id}`;

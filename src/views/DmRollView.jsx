@@ -142,13 +142,15 @@ function MonsterRollCard({ monster, fire, onInitAdd }) {
 
   const hasAnyButtons = actions.length || legendaryActions.length || saveEntries.length || skillEntries.length;
 
-  // Avrae's `!attack` looks up by name on the current combatant's
-  // loaded actions — pass the original action name (e.g. "Tail Slap"),
-  // not the slugified id, so the lookup succeeds.
+  // Avrae's `!i a` looks up by name on the current combatant's loaded
+  // actions — pass the original action name (e.g. "Tail Slap"), not the
+  // slugified id, so the lookup succeeds. `initContext: true` flips
+  // compose() from the player `!attack` form to the init-aware `!i a`.
   const onAction = (action) => fire({
     kind: 'attack',
     id: action.name,
     label: `${monster.name} · ${action.name}`,
+    initContext: true,
   });
 
   return (
