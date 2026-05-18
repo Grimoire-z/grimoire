@@ -101,8 +101,32 @@ export default function DmRollView({
     });
   }, []);
 
+  // Per-monster card-collapse toggle. Lets a DM keep many monsters
+  // active without the action grid swallowing the whole page; only
+  // expand the one whose turn it is. Same ephemeral lifetime as the
+  // OOT flags — resets on tab/mode change.
+  const [collapsedIds, setCollapsedIds] = useState({});
+  const toggleCollapsed = useCallback((monsterId) => {
+    setCollapsedIds(prev => {
+      const next = { ...prev };
+      if (next[monsterId]) delete next[monsterId];
+      else next[monsterId] = true;
+      return next;
+    });
+  }, []);
+
   // Sort active monsters by name for stable layout.
   const sorted = monsters.slice().sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+
+  // Bulk collapse/expand. When everything is collapsed, the button
+  // offers expand; otherwise (all-expanded or mixed) the next-most-
+  // useful click is collapse. Only shows when there are 2+ active
+  // monsters — a single card doesn't need a bulk toggle.
+  const allCollapsed = sorted.length > 0 && sorted.every(m => collapsedIds[m.id]);
+  const toggleAll = () => {
+    if (allCollapsed) setCollapsedIds({});
+    else              setCollapsedIds(Object.fromEntries(sorted.map(m => [m.id, true])));
+  };
 
   return (
     <>
@@ -114,17 +138,32 @@ export default function DmRollView({
               the "active" box on any monster you want to surface here.
             </div>
           ) : (
-            <div className="space-y-5">
-              {sorted.map(m => (
-                <MonsterRollCard
-                  key={m.id}
-                  monster={m}
-                  fire={fire}
-                  onInitAdd={() => fireInitAdd(m)}
-                  outOfTurn={!!outOfTurnIds[m.id]}
-                  onToggleOutOfTurn={() => toggleOutOfTurn(m.id)}
-                />
-              ))}
+            <div>
+              {sorted.length > 1 && (
+                <div className="flex justify-end mb-2">
+                  <button
+                    type="button"
+                    onClick={toggleAll}
+                    className="text-xs font-cmd uppercase tracking-wider text-fade hover:text-parchment transition"
+                  >
+                    {allCollapsed ? '▼ expand all' : '▶ collapse all'}
+                  </button>
+                </div>
+              )}
+              <div className="space-y-5">
+                {sorted.map(m => (
+                  <MonsterRollCard
+                    key={m.id}
+                    monster={m}
+                    fire={fire}
+                    onInitAdd={() => fireInitAdd(m)}
+                    outOfTurn={!!outOfTurnIds[m.id]}
+                    onToggleOutOfTurn={() => toggleOutOfTurn(m.id)}
+                    collapsed={!!collapsedIds[m.id]}
+                    onToggleCollapsed={() => toggleCollapsed(m.id)}
+                  />
+                ))}
+              </div>
             </div>
           )}
         </section>
@@ -149,7 +188,7 @@ export default function DmRollView({
   );
 }
 
-function MonsterRollCard({ monster, fire, onInitAdd, outOfTurn, onToggleOutOfTurn }) {
+function MonsterRollCard({ monster, fire, onInitAdd, outOfTurn, onToggleOutOfTurn, collapsed, onToggleCollapsed }) {
   const summary = compactSummary(monster);
   const saveEntries  = monster.saves  ? Object.entries(monster.saves).filter(([, v]) => v != null && v !== '')  : [];
   const skillEntries = monster.skills ? Object.entries(monster.skills).filter(([, v]) => v != null && v !== '') : [];
@@ -176,12 +215,23 @@ function MonsterRollCard({ monster, fire, onInitAdd, outOfTurn, onToggleOutOfTur
 
   return (
     <div className="border border-gold-strong bg-card rounded-sm overflow-hidden">
-      <div className="flex items-start justify-between gap-3 px-4 py-3 border-b border-gold bg-active">
-        <div className="min-w-0">
-          <div className="font-display text-lg text-gold uppercase tracking-wider truncate">
-            {monster.name || '— unnamed —'}
+      <div className={`flex items-start justify-between gap-3 px-4 py-3 bg-active ${collapsed ? '' : 'border-b border-gold'}`}>
+        <div className="flex items-start gap-3 min-w-0 flex-1">
+          <button
+            type="button"
+            onClick={onToggleCollapsed}
+            title={collapsed ? 'Expand' : 'Collapse'}
+            aria-expanded={!collapsed}
+            className="text-gold hover:text-parchment text-sm font-cmd leading-none mt-1 flex-shrink-0 transition"
+          >
+            {collapsed ? '▶' : '▼'}
+          </button>
+          <div className="min-w-0">
+            <div className="font-display text-lg text-gold uppercase tracking-wider truncate">
+              {monster.name || '— unnamed —'}
+            </div>
+            {summary && <div className="text-fade text-xs italic truncate">{summary}</div>}
           </div>
-          {summary && <div className="text-fade text-xs italic truncate">{summary}</div>}
         </div>
         <div className="flex items-center gap-3 flex-shrink-0">
           <label
@@ -217,6 +267,7 @@ function MonsterRollCard({ monster, fire, onInitAdd, outOfTurn, onToggleOutOfTur
         </div>
       </div>
 
+      {!collapsed && (
       <div className="px-4 py-3 space-y-4">
         {actions.length > 0 && (
           <ButtonGroup label="Actions">
@@ -288,6 +339,7 @@ function MonsterRollCard({ monster, fire, onInitAdd, outOfTurn, onToggleOutOfTur
           </div>
         )}
       </div>
+      )}
     </div>
   );
 }
