@@ -23,8 +23,8 @@ const MODES_PLAYER = [
   { id: 'modifiers', label: 'Modifiers' },
 ];
 const MODES_DM = [
-  { id: 'bestiary',  label: 'Bestiary' },
   { id: 'roll',      label: 'Roll' },
+  { id: 'bestiary',  label: 'Bestiary' },
   { id: 'targets',   label: 'Targets' },
   { id: 'modifiers', label: 'Modifiers' },
 ];

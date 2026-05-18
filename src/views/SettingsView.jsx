@@ -6,8 +6,6 @@ import { downloadExport, parseImport } from '../state.js';
 export default function SettingsView({ settings, setSettings, state, replaceState }) {
   return (
     <main className="px-6 pb-12 max-w-5xl mx-auto relative z-10 flex flex-col gap-4">
-      <ModeSection settings={settings} setSettings={setSettings} />
-
       <UpdatesSection />
 
       <BackupRestoreSection state={state} replaceState={replaceState} />
@@ -41,6 +39,8 @@ export default function SettingsView({ settings, setSettings, state, replaceStat
           ))}
         </div>
       </SectionCard>
+
+      <ModeSection settings={settings} setSettings={setSettings} />
 
       <CreditsSection />
     </main>
