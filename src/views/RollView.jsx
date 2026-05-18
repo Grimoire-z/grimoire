@@ -1,7 +1,8 @@
 import { useCallback, useState } from 'react';
 import { compose } from '../composer.js';
 import { SAVE_DEFS, SKILL_DEFS } from '../state.js';
-import { TabBar, ActionCard, ModifierRow } from '../components.jsx';
+import { TabBar, ActionCard } from '../components.jsx';
+import { RollSidePanel, ComposerBar } from './RollChrome.jsx';
 
 const SLOT_LEVELS = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9];
 
@@ -15,25 +16,6 @@ export default function RollView({
   composed, setComposed, history, setHistory, copied, setCopied,
 }) {
   const [spellLevel, setSpellLevel] = useState(null);
-
-  const toggleMod = useCallback((modId) => {
-    setActiveMods(prev => {
-      const next = { ...prev };
-      const mod  = modifiers.find(m => m.id === modId);
-      if (!mod) return prev;
-      if (next[modId]) { delete next[modId]; return next; }
-      if (mod.excludes) mod.excludes.forEach(e => delete next[e]);
-      next[modId] = true;
-      return next;
-    });
-  }, [modifiers, setActiveMods]);
-
-  const setModParam = (modId, paramId, optionIndex) => {
-    setModParams(prev => ({
-      ...prev,
-      [modId]: { ...(prev[modId] || {}), [paramId]: optionIndex },
-    }));
-  };
 
   const fire = useCallback((action) => {
     const targetNames = targets
@@ -53,15 +35,6 @@ export default function RollView({
     setCopied(true);
     setTimeout(() => setCopied(false), 1500);
   }, [activeMods, modParams, modifiers, custom, targets, selectedTargets, setComposed, setHistory, setCopied]);
-
-  const clearMods = () => {
-    setActiveMods({});
-    setCustom({ bonus: '', damage: '' });
-  };
-
-  const validActiveMods = Object.fromEntries(
-    Object.entries(activeMods).filter(([id]) => modifiers.find(m => m.id === id))
-  );
 
   // Avrae's !cast handles spell attacks — so any "attack" whose id matches
   // a spell is redundant in the Attacks tab. Filter at render time so the
@@ -168,88 +141,22 @@ export default function RollView({
           )}
         </section>
 
-        <aside className="lg:col-span-2">
-          <TargetsPanel
-            targets={targets} folders={folders}
-            selectedTargets={selectedTargets} setSelectedTargets={setSelectedTargets}
-            actionAccepts={tab === 'attacks' || tab === 'spells'}
-          />
-
-          <div className="flex items-baseline justify-between mb-2 mt-5">
-            <h2 className="font-display text-gold text-sm">MODIFIERS</h2>
-            <button onClick={clearMods}
-                    className="text-xs text-fade hover:text-parchment font-cmd">
-              clear all
-            </button>
-          </div>
-          <div className="divider mb-3" />
-
-          <div className="space-y-2">
-            {modifiers.map(m => (
-              <ModifierRow key={m.id} mod={m}
-                active={!!validActiveMods[m.id]}
-                paramSelections={modParams[m.id] || {}}
-                onToggle={() => toggleMod(m.id)}
-                onParamChange={(pid, idx) => setModParam(m.id, pid, idx)} />
-            ))}
-            {modifiers.length === 0 && (
-              <div className="text-fade italic text-sm text-center py-8">
-                no modifiers — open <span className="text-gold">⚙ modifiers</span> in the header to forge some
-              </div>
-            )}
-          </div>
-
-          <div className="divider my-4" />
-
-          <div className="space-y-2 text-sm">
-            <div>
-              <label className="text-fade text-xs uppercase tracking-wider">Custom bonus to hit</label>
-              <input className="lined" placeholder='e.g. 2  or  1d4'
-                     value={custom.bonus}
-                     onChange={e => setCustom(c => ({ ...c, bonus: e.target.value }))} />
-            </div>
-            <div>
-              <label className="text-fade text-xs uppercase tracking-wider">Custom extra damage</label>
-              <input className="lined" placeholder='e.g. 1d6 [fire]'
-                     value={custom.damage}
-                     onChange={e => setCustom(c => ({ ...c, damage: e.target.value }))} />
-            </div>
-          </div>
-        </aside>
+        <RollSidePanel
+          modifiers={modifiers}
+          activeMods={activeMods} setActiveMods={setActiveMods}
+          modParams={modParams} setModParams={setModParams}
+          targets={targets} folders={folders}
+          selectedTargets={selectedTargets} setSelectedTargets={setSelectedTargets}
+          actionAccepts={tab === 'attacks' || tab === 'spells'}
+          custom={custom} setCustom={setCustom}
+        />
       </main>
 
-      <div className="fixed bottom-0 left-0 right-0 bg-cmd border-t border-gold-strong z-20">
-        <div className="max-w-7xl mx-auto px-6 py-3">
-          <div className="flex items-center gap-3">
-            <span className="font-display text-gold text-xs uppercase tracking-widest">cmd</span>
-            <code className={`font-cmd text-sm flex-1 truncate ${composed ? 'text-parchment' : 'text-fade'} ${copied ? 'flash' : ''}`}>
-              {composed || 'click an action to compose a command…'}
-            </code>
-            {composed && (
-              <button
-                onClick={() => { navigator.clipboard?.writeText(composed); setCopied(true); setTimeout(() => setCopied(false), 1500); }}
-                className="text-xs font-cmd uppercase tracking-wider text-gold border border-gold px-3 py-1.5 hover:bg-active transition"
-              >
-                {copied ? '✓ copied' : '📋 copy'}
-              </button>
-            )}
-          </div>
-
-          {history.length > 0 && (
-            <div className="mt-2 pt-2 border-t border-gold flex gap-3 overflow-x-auto scrollbar-thin">
-              {history.map((h, i) => (
-                <button key={i}
-                  onClick={() => { navigator.clipboard?.writeText(h.cmd); setComposed(h.cmd); setCopied(true); setTimeout(() => setCopied(false), 1500); }}
-                  className="text-left flex-shrink-0 text-xs font-cmd text-fade hover:text-parchment whitespace-nowrap"
-                  title={h.cmd}
-                >
-                  <span className="text-gold">{h.time}</span> {h.label}
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
-      </div>
+      <ComposerBar
+        composed={composed} setComposed={setComposed}
+        copied={copied} setCopied={setCopied}
+        history={history}
+      />
     </>
   );
 }
@@ -404,118 +311,3 @@ function EmptyState({ text }) {
   );
 }
 
-function TargetsPanel({ targets, folders, selectedTargets, setSelectedTargets, actionAccepts }) {
-  const toggle = (id) => {
-    setSelectedTargets(prev => {
-      const next = { ...prev };
-      if (next[id]) delete next[id];
-      else next[id] = true;
-      return next;
-    });
-  };
-
-  const selectedCount = targets.filter(t => selectedTargets[t.id]).length;
-  const folderIds = new Set(folders.map(f => f.id));
-  const targetsInFolder = (fid) =>
-    targets.filter(t => (fid == null ? !folderIds.has(t.folderId) : t.folderId === fid));
-  const ungrouped = targetsInFolder(null);
-
-  return (
-    <div>
-      <div className="flex items-baseline justify-between mb-2">
-        <h2 className="font-display text-gold text-sm">
-          TARGETS{selectedCount > 0 && <span className="text-fade font-cmd"> · {selectedCount} selected</span>}
-        </h2>
-        {selectedCount > 0 && (
-          <button onClick={() => setSelectedTargets({})}
-                  className="text-xs text-fade hover:text-parchment font-cmd">
-            clear selection
-          </button>
-        )}
-      </div>
-      <div className="divider mb-3" />
-
-      {!actionAccepts && targets.length > 0 && (
-        <div className="text-fade italic text-xs mb-2">
-          targets are ignored for saves &amp; skill checks
-        </div>
-      )}
-
-      <div className="space-y-2">
-        {folders.map(f => (
-          <TargetGroup
-            key={f.id}
-            label={f.name || '(unnamed folder)'}
-            targets={targetsInFolder(f.id)}
-            selectedTargets={selectedTargets}
-            onToggle={toggle}
-          />
-        ))}
-        {ungrouped.length > 0 && (
-          <TargetGroup
-            label="Ungrouped"
-            targets={ungrouped}
-            selectedTargets={selectedTargets}
-            onToggle={toggle}
-            mutedHeader
-          />
-        )}
-        {targets.length === 0 && (
-          <div className="text-fade italic text-sm text-center py-4">
-            no targets — open the <span className="text-gold">Targets</span> tab to create some
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-function TargetGroup({ label, targets, selectedTargets, onToggle, mutedHeader }) {
-  const [collapsed, setCollapsed] = useState(false);
-  const selCount = targets.filter(t => selectedTargets[t.id]).length;
-
-  return (
-    <div className="border border-gold rounded-sm bg-card">
-      <button
-        type="button"
-        onClick={() => setCollapsed(c => !c)}
-        className="w-full flex items-center gap-2 px-2 py-1.5 hover:bg-card-hover transition text-left"
-      >
-        <span className="text-gold font-cmd text-xs w-3">{collapsed ? '▶' : '▼'}</span>
-        <span className={`font-display text-xs uppercase tracking-wider flex-1 ${mutedHeader ? 'text-fade' : 'text-gold'}`}>
-          {label}
-        </span>
-        <span className="text-xs font-cmd text-fade">
-          {targets.length}{selCount > 0 && ` · ${selCount} sel`}
-        </span>
-      </button>
-      {!collapsed && (
-        <div className="space-y-1 px-2 pb-2 pt-1">
-          {targets.map(t => {
-            const active = !!selectedTargets[t.id];
-            return (
-              <div key={t.id}
-                   onClick={() => onToggle(t.id)}
-                   className={`flex items-center gap-2 border rounded-sm px-2 py-1 cursor-pointer transition ${
-                     active ? 'bg-active glow-active border-gold-strong' : 'bg-grimoire border-gold hover:bg-card-hover'
-                   }`}>
-                <div className={`w-3.5 h-3.5 border rounded-sm flex-shrink-0 flex items-center justify-center text-xs ${
-                       active ? 'border-gold-strong' : 'border-gold'
-                     }`}
-                     style={active ? { backgroundColor: '#d4a644', color: '#14100c' } : {}}>
-                  {active && '✓'}
-                </div>
-                <span className={`flex-1 text-sm font-cmd truncate ${active ? 'text-parchment' : 'text-fade'}`}>
-                  {t.name || <em className="italic">unnamed</em>}
-                </span>
-              </div>
-            );
-          })}
-          {targets.length === 0 && (
-            <div className="text-fade italic text-xs px-1 py-1">empty</div>
-          )}
-        </div>
-      )}
-    </div>
-  );
-}

@@ -12,6 +12,7 @@ import TargetsView from './views/TargetsView.jsx';
 import SettingsView from './views/SettingsView.jsx';
 import VaultView from './views/VaultView.jsx';
 import BestiaryView from './views/BestiaryView.jsx';
+import DmRollView from './views/DmRollView.jsx';
 import { D20Icon, PortraitDisplay } from './components.jsx';
 
 // Header nav lists. Player mode requires an active character for the four
@@ -371,7 +372,18 @@ export default function App() {
         />
       )}
       {dmMode && mode === 'roll' && (
-        <DmRollPlaceholder />
+        <DmRollView
+          monsters={Object.values(monsters).filter(m => m.active)}
+          modifiers={globalModifiers}
+          targets={targets} folders={folders}
+          selectedTargets={selectedTargets} setSelectedTargets={setSelectedTargets}
+          activeMods={activeMods} setActiveMods={setActiveMods}
+          modParams={modParams} setModParams={setModParams}
+          custom={custom} setCustom={setCustom}
+          composed={composed} setComposed={setComposed}
+          history={history} setHistory={setHistory}
+          copied={copied} setCopied={setCopied}
+        />
       )}
       {!dmMode && mode === 'character' && activeCharacter && (
         <CharacterView
@@ -403,30 +415,6 @@ export default function App() {
         />
       )}
     </div>
-  );
-}
-
-// Placeholder for the DM Roll surface — landing in slice 4 once active
-// monsters drive a real action grid.
-function DmRollPlaceholder() {
-  return (
-    <main className="relative z-10 px-6 pb-12 max-w-7xl mx-auto mt-4">
-      <div className="border border-gold rounded-sm p-8 text-center bg-card">
-        <div className="font-display text-gold text-lg uppercase tracking-wider mb-2">
-          DM Roll
-        </div>
-        <p className="text-fade italic text-sm max-w-xl mx-auto">
-          Coming next: active monsters from the Bestiary surface here as
-          cards, each with clickable attack / save / check buttons that
-          compose Avrae <span className="font-cmd">!attack</span>,
-          {' '}<span className="font-cmd">!save</span>,
-          {' '}<span className="font-cmd">!check</span> commands. A per-card
-          {' '}<span className="font-cmd">!init add</span> button spins up
-          the encounter; combat itself runs through Avrae's initiative
-          tracker on the current combatant's turn.
-        </p>
-      </div>
-    </main>
   );
 }
 
