@@ -163,8 +163,8 @@ function MonsterRollCard({ monster, fire, onInitAdd, outOfTurn, onToggleOutOfTur
   // slugified id, so the lookup succeeds. `initContext: true` flips
   // compose() from the player `!attack` form to the init-aware `!i a`.
   // When the per-card `outOfTurn` checkbox is on, compose() further
-  // flips to `!i aoo "<combatant>" "<action>"` so a specific monster
-  // can roll attacks while another combatant is current in init.
+  // flips to `!i offturnattack "<combatant>" "<action>"` so a specific
+  // monster can attack while another combatant is current in init.
   const onAction = (action) => fire({
     kind: 'attack',
     id: action.name,
@@ -186,7 +186,7 @@ function MonsterRollCard({ monster, fire, onInitAdd, outOfTurn, onToggleOutOfTur
         <div className="flex items-center gap-3 flex-shrink-0">
           <label
             className="inline-flex items-center gap-2 cursor-pointer select-none"
-            title="When checked, attack buttons compose !i aoo so this monster acts out of turn (opportunity attacks, reactions). Save/check buttons aren't affected — Avrae's init save/check don't have a standard OOT form."
+            title="When checked, every roll button on this card composes the Avrae !i offturn{attack,save,check} variant so this monster acts out of turn (reactions, opportunity attacks, triggered saves, passive checks during another combatant's turn)."
           >
             <span
               className={`w-3.5 h-3.5 border rounded-sm flex items-center justify-center text-xs flex-shrink-0 ${
@@ -252,8 +252,10 @@ function MonsterRollCard({ monster, fire, onInitAdd, outOfTurn, onToggleOutOfTur
                 onClick={() => fire({
                   kind: 'save',
                   id: ability,
-                  label: `${monster.name} · ${SAVE_LABELS[ability] || ability.toUpperCase()} save`,
+                  label: `${monster.name} · ${SAVE_LABELS[ability] || ability.toUpperCase()} save${outOfTurn ? ' (OOT)' : ''}`,
                   initContext: true,
+                  outOfTurn,
+                  combatantName: monster.name,
                 })}
               />
             ))}
@@ -270,8 +272,10 @@ function MonsterRollCard({ monster, fire, onInitAdd, outOfTurn, onToggleOutOfTur
                 onClick={() => fire({
                   kind: 'check',
                   id: skill,
-                  label: `${monster.name} · ${SKILL_LABELS[skill] || skill}`,
+                  label: `${monster.name} · ${SKILL_LABELS[skill] || skill}${outOfTurn ? ' (OOT)' : ''}`,
                   initContext: true,
+                  outOfTurn,
+                  combatantName: monster.name,
                 })}
               />
             ))}

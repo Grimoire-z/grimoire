@@ -26,28 +26,39 @@ export function composeFromMod(mod, paramSelections) {
 }
 
 export function compose({ action, activeMods, modParams, modifiers, custom }) {
-  // `action.initContext: true` switches to Avrae's initiative-aware variant
-  // of the command — used by DM Roll where rolls go through the current
-  // combatant in init, not the user's bound character. Player Roll leaves
-  // it unset and gets the bound-character commands. Spell stays on `!cast`
-  // because DM Roll doesn't surface spell buttons today; revisit when it
-  // does and we'll want `!i cast`.
-  //
-  // `action.outOfTurn` + `action.combatantName` flip attack-kind commands
-  // to Avrae's `!i aoo "<combatant>" "<action>"` form — for reactions and
-  // opportunity attacks where a named creature acts when it isn't its
-  // current init turn. Only attacks have a clean OOT syntax in Avrae;
-  // saves/checks fall back to the regular init-aware form even when the
-  // flag is set, since their OOT call patterns aren't standardized.
-  const init = !!action.initContext;
-  const aoo  = init && !!action.outOfTurn && !!action.combatantName;
+  // Three command flavors per kind:
+  //   - bound-character (player Roll): `!attack`, `!cast`, `!save`, `!check`
+  //   - init-aware (DM Roll, current combatant): `!i a`, `!i cast`, `!i s`, `!i c`
+  //   - out-of-turn (DM Roll, named combatant acting off-turn): Avrae's
+  //     `!i offturnattack` / `!i offturncast` / `!i offturnsave` /
+  //     `!i offturncheck`. These take `<combatant> <action-or-ability>`
+  //     as positional args; we quote anything string-y to handle spaces.
+  // `action.initContext: true` picks init-aware; combined with
+  // `action.outOfTurn` + `action.combatantName` it picks out-of-turn.
+  // Spell stays on the standard forms because DM Roll doesn't surface
+  // spell buttons today, but the init-aware + OOT branches are wired in
+  // so adding them later is free.
+  const init   = !!action.initContext;
+  const offturn = init && !!action.outOfTurn && !!action.combatantName;
+  const ot     = action.combatantName;
   let cmd;
-  if      (action.kind === 'attack') cmd = aoo  ? `!i aoo "${action.combatantName}" "${action.id}"`
-                                              : init ? `!i a "${action.id}"`
-                                                     : `!attack "${action.id}"`;
-  else if (action.kind === 'spell')  cmd = `!cast "${action.id}"`;
-  else if (action.kind === 'save')   cmd = init ? `!i s ${action.id}` : `!save ${action.id}`;
-  else                                cmd = init ? `!i c ${action.id}` : `!check ${action.id}`;
+  if (action.kind === 'attack') {
+    cmd = offturn ? `!i offturnattack "${ot}" "${action.id}"`
+        : init    ? `!i a "${action.id}"`
+                  : `!attack "${action.id}"`;
+  } else if (action.kind === 'spell') {
+    cmd = offturn ? `!i offturncast "${ot}" "${action.id}"`
+        : init    ? `!i cast "${action.id}"`
+                  : `!cast "${action.id}"`;
+  } else if (action.kind === 'save') {
+    cmd = offturn ? `!i offturnsave "${ot}" ${action.id}`
+        : init    ? `!i s ${action.id}`
+                  : `!save ${action.id}`;
+  } else {
+    cmd = offturn ? `!i offturncheck "${ot}" ${action.id}`
+        : init    ? `!i c ${action.id}`
+                  : `!check ${action.id}`;
+  }
 
   const argParts = [];
   if (action.kind === 'spell' && action.upcastTo > action.level) {
