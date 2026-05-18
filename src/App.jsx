@@ -3,6 +3,7 @@ import {
   DEFAULT_SETTINGS, DEFAULT_MODIFIERS,
   loadState, saveState, defaultVault,
   makeCharacterId, makeBlankCharacter,
+  makeMonsterId, makeBlankMonster,
 } from './state.js';
 import RollView from './views/RollView.jsx';
 import ModifierForgeView from './views/ModifierForgeView.jsx';
@@ -243,6 +244,78 @@ export default function App() {
   // view-internal useState resets without us having to lift it up.
   const charKey = activeCharacterId || 'vault';
 
+  // ─── Bestiary CRUD (DM mode) ─────────────────────────────────────────
+  // Mirrors the character vault helpers above. No `enter` concept — DM
+  // mode has no "active monster" singleton; instead each monster carries
+  // an `active: bool` flag that surfaces it on the DM Roll page.
+
+  const addMonster = (monster) => {
+    setMonsters(ms => ({ ...ms, [monster.id]: monster }));
+    return monster.id;
+  };
+
+  const renameMonster = (id, name) => {
+    setMonsters(ms => ms[id] ? ({ ...ms, [id]: { ...ms[id], name } }) : ms);
+  };
+
+  const duplicateMonster = (id) => {
+    const src = monsters[id];
+    if (!src) return null;
+    const clone = JSON.parse(JSON.stringify(src));
+    clone.id = makeMonsterId();
+    clone.name = `${src.name || 'Monster'} (copy)`;
+    // A duplicate starts inactive so it doesn't clutter the encounter
+    // roster before the DM decides to use it.
+    clone.active = false;
+    setMonsters(ms => ({ ...ms, [clone.id]: clone }));
+    return clone.id;
+  };
+
+  const deleteMonster = (id) => {
+    setMonsters(ms => {
+      if (!ms[id]) return ms;
+      const next = { ...ms };
+      delete next[id];
+      return next;
+    });
+  };
+
+  const toggleMonsterActive = (id) => {
+    setMonsters(ms => ms[id]
+      ? ({ ...ms, [id]: { ...ms[id], active: !ms[id].active } })
+      : ms);
+  };
+
+  const moveMonsterToFolder = (id, folderId) => {
+    setMonsters(ms => ms[id]
+      ? ({ ...ms, [id]: { ...ms[id], folderId: folderId || null } })
+      : ms);
+  };
+
+  const addMonsterFolder = (name = 'New Folder') => {
+    const folder = { id: makeMonsterId(), name };
+    setMonsterFolders(fs => [...fs, folder]);
+    return folder.id;
+  };
+
+  const renameMonsterFolder = (id, name) => {
+    setMonsterFolders(fs => fs.map(f => f.id === id ? { ...f, name } : f));
+  };
+
+  // Folder delete moves contained monsters back to ungrouped (folderId
+  // = null) so nothing is lost — destructive enough to confirm but not
+  // typed-confirm-worthy. Matches TargetsView's folder pattern.
+  const deleteMonsterFolder = (id) => {
+    setMonsterFolders(fs => fs.filter(f => f.id !== id));
+    setMonsters(ms => {
+      const next = { ...ms };
+      for (const mid of Object.keys(next)) {
+        if (next[mid].folderId === id) next[mid] = { ...next[mid], folderId: null };
+      }
+      return next;
+    });
+  };
+
   const dmMode = !!settings.dmMode;
 
   return (
@@ -265,7 +338,19 @@ export default function App() {
         />
       )}
       {dmMode && mode === 'bestiary' && (
-        <BestiaryView />
+        <BestiaryView
+          monsters={monsters}
+          monsterFolders={monsterFolders}
+          onAddMonster={addMonster}
+          onRenameMonster={renameMonster}
+          onDuplicateMonster={duplicateMonster}
+          onDeleteMonster={deleteMonster}
+          onToggleMonsterActive={toggleMonsterActive}
+          onMoveMonsterToFolder={moveMonsterToFolder}
+          onAddFolder={addMonsterFolder}
+          onRenameFolder={renameMonsterFolder}
+          onDeleteFolder={deleteMonsterFolder}
+        />
       )}
       {!dmMode && mode === 'roll' && activeCharacter && (
         <RollView

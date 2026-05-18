@@ -1,5 +1,7 @@
 // Small shared sub-components used by multiple views.
 
+import { useEffect, useRef, useState } from 'react';
+
 export function Checkbox({ label, checked, onChange, compact }) {
   return (
     <label
@@ -181,6 +183,88 @@ export async function fileToPortraitDataUrl(file, targetSize = 256, quality = 0.
   } finally {
     URL.revokeObjectURL(blobUrl);
   }
+}
+
+// ─── ConfirmDeleteModal ──────────────────────────────────────────────────
+// Generic typed-confirm modal for destructive actions. Lifted from
+// VaultView once a second use case (monster deletion in DM mode's
+// Bestiary) arrived. Backdrop click + Escape cancel; the Delete button
+// stays disabled until the input matches `DELETE` exactly so a muscle-
+// memory Enter on a half-typed string can't fire it. Caller passes:
+//   - `kind`: lowercase noun for the title ("character", "monster", …)
+//   - `name`: gold-styled display name
+//   - `details`: optional JSX appended after "permanently delete <name> —"
+// Importers: see VaultView.jsx (character delete) and BestiaryView.jsx
+// (monster delete).
+export function ConfirmDeleteModal({ kind = 'item', name, details, onCancel, onConfirm }) {
+  const [typed, setTyped] = useState('');
+  const inputRef = useRef(null);
+  const ready = typed === 'DELETE';
+
+  useEffect(() => {
+    inputRef.current?.focus();
+    const onKey = (e) => { if (e.key === 'Escape') onCancel(); };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [onCancel]);
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center px-4"
+      style={{ backgroundColor: 'rgba(0, 0, 0, 0.65)' }}
+      onClick={onCancel}
+    >
+      <div
+        className="bg-card border border-crimson rounded-sm max-w-md w-full p-5"
+        style={{ boxShadow: '0 20px 60px rgba(0,0,0,0.7), 0 0 0 1px rgba(var(--color-crimson-rgb), 0.3)' }}
+        onClick={e => e.stopPropagation()}
+      >
+        <h3 className="font-display text-lg text-crimson uppercase tracking-wider mb-2">
+          Delete {kind}?
+        </h3>
+        <p className="text-parchment text-sm mb-3">
+          You're about to permanently delete{' '}
+          <span className="text-gold font-display">{name || '— unnamed —'}</span>
+          {details ? <> — {details}</> : null}.
+        </p>
+        <p className="text-fade text-xs italic mb-4">
+          This cannot be undone. To confirm, type <span className="font-cmd text-crimson">DELETE</span> below.
+        </p>
+        <input
+          ref={inputRef}
+          type="text"
+          value={typed}
+          onChange={e => setTyped(e.target.value)}
+          onKeyDown={e => { if (e.key === 'Enter' && ready) onConfirm(); }}
+          placeholder="type DELETE"
+          className="lined w-full font-cmd mb-4"
+          style={{ borderBottomColor: ready ? 'var(--color-crimson)' : undefined }}
+        />
+        <div className="flex justify-end gap-2">
+          <button
+            type="button"
+            onClick={onCancel}
+            className="text-xs font-cmd uppercase tracking-wider text-fade hover:text-parchment border border-gold px-3 py-1.5 hover:bg-active transition"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={onConfirm}
+            disabled={!ready}
+            className={`text-xs font-cmd uppercase tracking-wider border px-3 py-1.5 transition ${
+              ready
+                ? 'text-parchment border-crimson hover:bg-active cursor-pointer'
+                : 'text-fade border-gold opacity-50 cursor-not-allowed'
+            }`}
+            style={ready ? { backgroundColor: 'var(--color-crimson)', color: 'var(--color-bg)' } : {}}
+          >
+            ✕ Delete
+          </button>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 // d20 silhouette used as the Settings nav button. Sized by the surrounding box.
