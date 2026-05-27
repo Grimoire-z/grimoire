@@ -371,6 +371,7 @@ export default function App() {
         <RollView
           key={charKey}
           character={activeCharacter}
+          updateCharacter={setActiveCharacter}
           modifiers={mergedModifiers}
           targets={targets} folders={folders}
           selectedTargets={selectedTargets} setSelectedTargets={setSelectedTargets}

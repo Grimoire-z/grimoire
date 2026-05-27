@@ -149,6 +149,9 @@
 .border-gold        { border-color: rgba(var(--color-gold-rgb), 0.35); }
 .border-gold-strong { border-color: rgba(var(--color-gold-rgb), 0.8); }
 .border-crimson     { border-color: rgba(var(--color-crimson-rgb), 0.7); }
+/* Faint horizontal dividers between sibling rows — used by the
+   compact Roll-view columns (saves/skills/attacks/spells). */
+.divide-gold > * + * { border-top: 1px solid rgba(var(--color-gold-rgb), 0.18); }
 
 html, body, #root { height: 100%; margin: 0; padding: 0; }
 body {

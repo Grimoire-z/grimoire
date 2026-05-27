@@ -160,6 +160,24 @@ function TargetsPanel({ targets, folders, selectedTargets, setSelectedTargets, a
     });
   };
 
+  // Per-folder bulk helpers — `onSelectAll`/`onClear` on each TargetGroup
+  // closes over the folder's filtered target list so we never accidentally
+  // touch targets that belong to other folders.
+  const selectAllIn = (folderTargets) => {
+    setSelectedTargets(prev => {
+      const next = { ...prev };
+      for (const t of folderTargets) next[t.id] = true;
+      return next;
+    });
+  };
+  const clearAllIn = (folderTargets) => {
+    setSelectedTargets(prev => {
+      const next = { ...prev };
+      for (const t of folderTargets) delete next[t.id];
+      return next;
+    });
+  };
+
   const selectedCount = targets.filter(t => selectedTargets[t.id]).length;
   const folderIds = new Set(folders.map(f => f.id));
   const targetsInFolder = (fid) =>
@@ -187,22 +205,33 @@ function TargetsPanel({ targets, folders, selectedTargets, setSelectedTargets, a
         </div>
       )}
 
-      <div className="space-y-2">
-        {folders.map(f => (
-          <TargetGroup
-            key={f.id}
-            label={f.name || '(unnamed folder)'}
-            targets={targetsInFolder(f.id)}
-            selectedTargets={selectedTargets}
-            onToggle={toggle}
-          />
-        ))}
+      {/* Folder list is capped at ~half the viewport height. When the
+          contents (many folders, big folders, or both) exceed the cap,
+          the container scrolls internally so the modifier list below
+          stays anchored where the user expects it. */}
+      <div className="space-y-2 overflow-y-auto scrollbar-thin max-h-[29vh] pr-1">
+        {folders.map(f => {
+          const inFolder = targetsInFolder(f.id);
+          return (
+            <TargetGroup
+              key={f.id}
+              label={f.name || '(unnamed folder)'}
+              targets={inFolder}
+              selectedTargets={selectedTargets}
+              onToggle={toggle}
+              onSelectAll={() => selectAllIn(inFolder)}
+              onClear={() => clearAllIn(inFolder)}
+            />
+          );
+        })}
         {ungrouped.length > 0 && (
           <TargetGroup
             label="Ungrouped"
             targets={ungrouped}
             selectedTargets={selectedTargets}
             onToggle={toggle}
+            onSelectAll={() => selectAllIn(ungrouped)}
+            onClear={() => clearAllIn(ungrouped)}
             mutedHeader
           />
         )}
@@ -216,25 +245,49 @@ function TargetsPanel({ targets, folders, selectedTargets, setSelectedTargets, a
   );
 }
 
-function TargetGroup({ label, targets, selectedTargets, onToggle, mutedHeader }) {
+function TargetGroup({ label, targets, selectedTargets, onToggle, onSelectAll, onClear, mutedHeader }) {
   const [collapsed, setCollapsed] = useState(false);
   const selCount = targets.filter(t => selectedTargets[t.id]).length;
+  const allSelected = targets.length > 0 && selCount === targets.length;
 
   return (
     <div className="border border-gold rounded-sm bg-card">
-      <button
-        type="button"
-        onClick={() => setCollapsed(c => !c)}
-        className="w-full flex items-center gap-2 px-2 py-1.5 hover:bg-card-hover transition text-left"
-      >
-        <span className="text-gold font-cmd text-xs w-3">{collapsed ? '▶' : '▼'}</span>
-        <span className={`font-display text-xs uppercase tracking-wider flex-1 ${mutedHeader ? 'text-fade' : 'text-gold'}`}>
-          {label}
+      {/* Header row: chevron + label is its own button (toggle collapse);
+          the per-folder action buttons sit alongside so we don't nest
+          buttons. Count is a non-interactive span on the far right. */}
+      <div className="flex items-center gap-1 px-2 py-1.5">
+        <button
+          type="button"
+          onClick={() => setCollapsed(c => !c)}
+          className="flex items-center gap-2 flex-1 min-w-0 text-left hover:opacity-80 transition"
+        >
+          <span className="text-gold font-cmd text-xs w-3">{collapsed ? '▶' : '▼'}</span>
+          <span className={`font-display text-xs uppercase tracking-wider truncate ${mutedHeader ? 'text-fade' : 'text-gold'}`}>
+            {label}
+          </span>
+        </button>
+        <button
+          type="button"
+          onClick={onSelectAll}
+          disabled={allSelected || targets.length === 0}
+          title="select all in this folder"
+          className="text-[10px] font-cmd uppercase tracking-wider text-fade hover:text-gold disabled:opacity-30 disabled:hover:text-fade transition px-1"
+        >
+          all
+        </button>
+        <button
+          type="button"
+          onClick={onClear}
+          disabled={selCount === 0}
+          title="clear selections in this folder"
+          className="text-[10px] font-cmd uppercase tracking-wider text-fade hover:text-gold disabled:opacity-30 disabled:hover:text-fade transition px-1"
+        >
+          reset
+        </button>
+        <span className="text-xs font-cmd text-fade ml-1">
+          {targets.length}{selCount > 0 && ` · ${selCount}`}
         </span>
-        <span className="text-xs font-cmd text-fade">
-          {targets.length}{selCount > 0 && ` · ${selCount} sel`}
-        </span>
-      </button>
+      </div>
       {!collapsed && (
         <div className="space-y-1 px-2 pb-2 pt-1">
           {targets.map(t => {
