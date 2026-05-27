@@ -9,6 +9,7 @@ contextBridge.exposeInMainWorld('grimoire', {
   openExternal:              (url) => ipcRenderer.invoke('open-external', url),
   importMonsterFrom5etools:  (url)  => ipcRenderer.invoke('import-monster-from-5etools', url),
   importMonsterFromJson:     (text) => ipcRenderer.invoke('import-monster-from-json', text),
+  refreshCharacterFromDdb:   (url)  => ipcRenderer.invoke('refresh-character-from-ddb', url),
   onDownloadProgress: (cb) => {
     const listener = (_e, data) => cb(data);
     ipcRenderer.on('update-download-progress', listener);

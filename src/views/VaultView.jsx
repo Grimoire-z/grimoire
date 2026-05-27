@@ -19,6 +19,7 @@ import { useEffect, useRef, useState } from 'react';
 import { makeBlankCharacter, applyCharacterPatch } from '../state.js';
 import { PortraitDisplay, ConfirmDeleteModal } from '../components.jsx';
 import { importDdbPdfFile } from '../ddbPdfImport.js';
+import { importDdbJsonFile, parseDdbJson, DDB_BOOKMARKLET } from '../ddbJsonImport.js';
 
 export default function VaultView({
   characters, activeCharacterId,
@@ -49,6 +50,20 @@ export default function VaultView({
       throw new Error(
         `read ${result.itemCount} text items, ${result.fieldCount} populated form fields — but no known mappings matched`
       );
+    }
+    const name = result.patch?.name || 'Imported Character';
+    const character = applyCharacterPatch(makeBlankCharacter(name), result.patch);
+    setPicking(false);
+    onAddAndEnter(character);
+  };
+
+  // "Import from DDB JSON" branch — same shape as the PDF path but
+  // backed by the bookmarklet-captured exportData blob. Accepts either
+  // a .json file (file picker) or raw text (textarea paste).
+  const onPickJson = async ({ file, text }) => {
+    const result = file ? await importDdbJsonFile(file) : parseDdbJson(text);
+    if (!result.found?.length) {
+      throw new Error('no recognizable character fields found in this JSON');
     }
     const name = result.patch?.name || 'Imported Character';
     const character = applyCharacterPatch(makeBlankCharacter(name), result.patch);
@@ -89,6 +104,7 @@ export default function VaultView({
           onCancel={() => setPicking(false)}
           onBlank={onPickBlank}
           onPdf={onPickPdf}
+          onJson={onPickJson}
         />
       )}
     </main>
@@ -275,27 +291,73 @@ function AddCard({ onAdd }) {
 // different file without the modal closing. Backdrop click and Escape
 // cancel (but not while a PDF is mid-parse, since we'd leak the work).
 
-function AddCharacterPicker({ onCancel, onBlank, onPdf }) {
+function AddCharacterPicker({ onCancel, onBlank, onPdf, onJson }) {
   const [busy,  setBusy]  = useState(false);
   const [error, setError] = useState(null);
-  const fileRef = useRef(null);
+  // `mode` controls which secondary surface is open below the buttons.
+  //   null      → just the path buttons
+  //   'json'    → JSON paste/upload surface
+  //   'help'    → DDB bookmarklet copy + setup steps
+  const [mode,  setMode]  = useState(null);
+  const [jsonText, setJsonText] = useState('');
+  const [copied, setCopied] = useState(false);
+  const pdfFileRef  = useRef(null);
+  const jsonFileRef = useRef(null);
 
-  const onPickFile = () => fileRef.current?.click();
-  const onFile = async (e) => {
+  const onPickPdfFile = () => pdfFileRef.current?.click();
+  const onPdfFile = async (e) => {
     const file = e.target.files?.[0];
-    e.target.value = ''; // allow re-picking the same file after an error
+    e.target.value = '';
     if (!file) return;
     setBusy(true); setError(null);
     try {
       await onPdf(file);
-      // onPdf calls onAddAndEnter which switches mode to 'roll' and
-      // unmounts this modal alongside the rest of VaultView — we don't
-      // need to setPicking(false) here, but if the import errors we
-      // stay in the modal so the user can try a different file.
     } catch (err) {
       setError(err.message || String(err));
     } finally {
       setBusy(false);
+    }
+  };
+
+  const onPickJsonFile = () => jsonFileRef.current?.click();
+  // Load-file is a convenience that just fills the textarea so the
+  // user can review before submitting — matches AddMonsterPicker's
+  // JSON path and the Backup-and-Restore confirm-before-applying
+  // pattern. Submitting still goes through `onJson({ text })`.
+  const onJsonFile = async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    setError(null);
+    try {
+      setJsonText(await file.text());
+    } catch (err) {
+      setError(err.message || String(err));
+    }
+  };
+
+  const onSubmitJson = async () => {
+    if (!jsonText.trim()) {
+      setError('paste the JSON or load a .json file first');
+      return;
+    }
+    setBusy(true); setError(null);
+    try {
+      await onJson({ text: jsonText });
+    } catch (err) {
+      setError(err.message || String(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const onCopyBookmarklet = async () => {
+    try {
+      await navigator.clipboard.writeText(DDB_BOOKMARKLET);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      setError('clipboard write failed — select the textarea below and copy manually');
     }
   };
 
@@ -307,12 +369,12 @@ function AddCharacterPicker({ onCancel, onBlank, onPdf }) {
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center px-4"
+      className="fixed inset-0 z-50 flex items-center justify-center px-4 py-6 overflow-y-auto"
       style={{ backgroundColor: 'rgba(0, 0, 0, 0.65)' }}
       onClick={busy ? undefined : onCancel}
     >
       <div
-        className="bg-card border border-gold-strong rounded-sm max-w-md w-full p-5"
+        className="bg-card border border-gold-strong rounded-sm max-w-lg w-full p-5 my-auto"
         style={{ boxShadow: '0 20px 60px rgba(0,0,0,0.7), 0 0 0 1px rgba(var(--color-gold-rgb), 0.15)' }}
         onClick={e => e.stopPropagation()}
       >
@@ -338,7 +400,7 @@ function AddCharacterPicker({ onCancel, onBlank, onPdf }) {
           </button>
           <button
             type="button"
-            onClick={onPickFile}
+            onClick={onPickPdfFile}
             disabled={busy}
             className="btn-action w-full text-left p-3 border rounded-sm transition border-gold bg-grimoire hover:bg-card-hover disabled:opacity-50"
           >
@@ -350,12 +412,127 @@ function AddCharacterPicker({ onCancel, onBlank, onPdf }) {
             </div>
           </button>
           <input
-            ref={fileRef}
+            ref={pdfFileRef}
             type="file"
             accept="application/pdf,.pdf"
             className="hidden"
-            onChange={onFile}
+            onChange={onPdfFile}
           />
+
+          <button
+            type="button"
+            onClick={() => setMode(mode === 'json' ? null : 'json')}
+            disabled={busy}
+            aria-expanded={mode === 'json'}
+            className={`btn-action w-full text-left p-3 border rounded-sm transition disabled:opacity-50 ${
+              mode === 'json' ? 'border-gold-strong bg-active' : 'border-gold bg-grimoire hover:bg-card-hover'
+            }`}
+          >
+            <div className="font-display text-sm text-gold uppercase tracking-wider mb-1">
+              Import from DDB JSON
+            </div>
+            <div className="text-fade text-xs italic">
+              Paste or upload a JSON file captured from D&amp;D Beyond via the bookmarklet — much richer than the PDF path.
+            </div>
+          </button>
+
+          {mode === 'json' && (
+            <div className="border border-gold rounded-sm p-3 bg-grimoire space-y-2">
+              <textarea
+                className="w-full font-cmd text-xs bg-card border border-gold rounded-sm p-2 text-parchment resize-y"
+                rows={5}
+                placeholder='paste the JSON here (or load a .json file →)'
+                value={jsonText}
+                onChange={e => setJsonText(e.target.value)}
+                disabled={busy}
+              />
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={onPickJsonFile}
+                  disabled={busy}
+                  className="text-xs font-cmd uppercase tracking-wider text-fade hover:text-parchment border border-gold px-3 py-1.5 hover:bg-active transition disabled:opacity-50"
+                >
+                  📁 Load .json file
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setMode('help')}
+                  disabled={busy}
+                  className="text-xs font-cmd uppercase tracking-wider text-fade hover:text-parchment border border-gold px-3 py-1.5 hover:bg-active transition disabled:opacity-50"
+                >
+                  How to capture from DDB
+                </button>
+                <button
+                  type="button"
+                  onClick={onSubmitJson}
+                  disabled={busy || !jsonText.trim()}
+                  className="ml-auto text-xs font-cmd uppercase tracking-wider text-gold border border-gold-strong px-3 py-1.5 hover:bg-active transition disabled:opacity-30"
+                >
+                  {busy ? '… importing' : 'Import'}
+                </button>
+              </div>
+              <input
+                ref={jsonFileRef}
+                type="file"
+                accept="application/json,.json"
+                className="hidden"
+                onChange={onJsonFile}
+              />
+            </div>
+          )}
+
+          {mode === 'help' && (
+            <div className="border border-gold rounded-sm p-3 bg-grimoire space-y-3">
+              <div>
+                <div className="font-display text-xs text-gold uppercase tracking-wider mb-1">
+                  Recommended: DevTools copy
+                </div>
+                <div className="text-fade text-[11px] italic mb-1">
+                  Always works. ~30 seconds.
+                </div>
+                <ol className="text-fade text-xs italic space-y-1 list-decimal pl-4">
+                  <li>Open your character on D&amp;D Beyond.</li>
+                  <li>Open DevTools (<span className="text-parchment not-italic font-cmd">F12</span>) → <span className="text-parchment not-italic">Network</span> tab.</li>
+                  <li>Click DDB's <span className="text-parchment not-italic">Print to PDF</span> / <span className="text-parchment not-italic">Download</span> button.</li>
+                  <li>In Network, find the request to <span className="font-cmd text-gold not-italic">/character/v5/pdf</span> → click it.</li>
+                  <li>Switch to the <span className="text-parchment not-italic">Payload</span> tab → click <span className="text-parchment not-italic">view source</span> at the top → select all + copy.</li>
+                  <li>Paste back here in the JSON textarea and click Import.</li>
+                </ol>
+              </div>
+              <div className="border-t border-gold pt-2">
+                <div className="font-display text-xs text-gold uppercase tracking-wider mb-1">
+                  Fallback: bookmarklet
+                </div>
+                <div className="text-fade text-[11px] italic mb-1">
+                  May not work on all browsers — DDB's bundler caches <span className="font-cmd">fetch</span> at module load, so our intercept arrives too late on some setups. If the bookmarklet doesn't trigger a download or copy to clipboard, fall back to DevTools above.
+                </div>
+                <ol className="text-fade text-xs italic space-y-1 list-decimal pl-4 mt-1">
+                  <li>Click <span className="text-gold not-italic font-cmd">Copy bookmarklet</span> below.</li>
+                  <li>Open the bookmarks bar (Ctrl+Shift+B), right-click → <span className="text-parchment not-italic">Add page</span>; name it <span className="text-gold not-italic font-cmd">Grimoire DDB</span>, paste into URL.</li>
+                  <li>On the DDB character page, click the bookmarklet, then click DDB's Print button.</li>
+                </ol>
+                <div className="flex flex-wrap gap-2 pt-2">
+                  <button
+                    type="button"
+                    onClick={onCopyBookmarklet}
+                    className="text-xs font-cmd uppercase tracking-wider text-gold border border-gold-strong px-3 py-1.5 hover:bg-active transition"
+                  >
+                    {copied ? '✓ copied' : '📋 Copy bookmarklet'}
+                  </button>
+                </div>
+              </div>
+              <div className="border-t border-gold pt-2">
+                <button
+                  type="button"
+                  onClick={() => setMode('json')}
+                  className="text-xs font-cmd uppercase tracking-wider text-fade hover:text-parchment border border-gold px-3 py-1.5 hover:bg-active transition"
+                >
+                  ← back to import
+                </button>
+              </div>
+            </div>
+          )}
         </div>
         {error && (
           <div className="text-crimson text-xs italic mb-4 leading-relaxed">

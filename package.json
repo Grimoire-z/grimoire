@@ -1,7 +1,7 @@
 {
   "name": "grimoire",
   "private": true,
-  "version": "0.9.2",
+  "version": "0.9.3",
   "description": "Avrae Discord command composer",
   "type": "module",
   "main": "electron/main.cjs",

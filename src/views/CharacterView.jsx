@@ -2,6 +2,7 @@ import { useRef, useState } from 'react';
 import { SAVE_DEFS, SKILL_DEFS, applyCharacterPatch } from '../state.js';
 import { Checkbox, FieldLabel, SectionCard, PortraitDisplay, fileToPortraitDataUrl } from '../components.jsx';
 import { importDdbPdfFile } from '../ddbPdfImport.js';
+import { importDdbJsonFile, parseDdbJson, DDB_BOOKMARKLET } from '../ddbJsonImport.js';
 
 const SLOT_LEVELS = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9];
 
@@ -36,7 +37,7 @@ export default function CharacterView({ character, setCharacter }) {
         <Skills character={character} patchSkill={patchSkill} />
       </div>
       <div className="space-y-5">
-        <DdbImport setCharacter={setCharacter} />
+        <DdbImport character={character} setCharacter={setCharacter} />
         <Attacks character={character} setCharacter={setCharacter} />
         <Spells character={character} setCharacter={setCharacter} patchSlot={patchSlot} />
       </div>
@@ -563,11 +564,23 @@ function GearIcon({ size = 12 }) {
   );
 }
 
-function DdbImport({ setCharacter }) {
+function DdbImport({ character, setCharacter }) {
   const [pdfFile,     setPdfFile]     = useState(null);
   const [busy,        setBusy]        = useState(false);
   const [status,      setStatus]      = useState(null);
   const [diagnostics, setDiagnostics] = useState(null);
+  // JSON-side state. `jsonText` doubles as the paste field and the
+  // "loaded file contents" buffer; `jsonHelpOpen` toggles the
+  // bookmarklet instructions panel.
+  const [jsonText,    setJsonText]    = useState('');
+  const [jsonHelpOpen, setJsonHelpOpen] = useState(false);
+  const [bookmarkCopied, setBookmarkCopied] = useState(false);
+  const jsonFileRef = useRef(null);
+  // The embedded-browser refresh path is gated on Electron's
+  // refreshCharacterFromDdb bridge being present (not exposed when the
+  // renderer is loaded outside Electron, e.g. via plain vite for
+  // browser-preview verification).
+  const canRefresh = typeof window !== 'undefined' && !!window.grimoire?.refreshCharacterFromDdb;
 
   // Overwrites character fields the import provides; modifiers are
   // separate top-level state and intentionally untouched.
@@ -585,6 +598,89 @@ function DdbImport({ setCharacter }) {
   const reportSuccess = (patch, extra = '') => {
     const fields = Object.keys(patch).filter(k => patch[k] !== undefined);
     setStatus({ ok: true, msg: `imported${extra}: ${fields.join(', ')}` });
+  };
+
+  // Persist the DDB URL on every keystroke so a partially-entered URL
+  // survives a page-switch / browser-close. No debounce — the typing
+  // rate is human-scale and the write is cheap (localStorage via
+  // App.jsx's persist effect).
+  const setDdbUrl = (url) => setCharacter(c => ({ ...c, ddbUrl: url }));
+
+  const refreshFromDdb = async () => {
+    if (!character.ddbUrl?.trim()) {
+      setStatus({ ok: false, msg: 'paste your D&D Beyond character URL first' });
+      return;
+    }
+    setBusy(true);
+    setStatus(null);
+    try {
+      const result = await window.grimoire.refreshCharacterFromDdb(character.ddbUrl.trim());
+      if (result.cancelled) {
+        setStatus({ ok: false, msg: 'cancelled — closed the DDB window before clicking Print' });
+        return;
+      }
+      if (!result.body) {
+        setStatus({ ok: false, msg: 'no character data captured — did you click DDB\'s Print/Download button in the window?' });
+        return;
+      }
+      const parsed = parseDdbJson(result.body);
+      if (!parsed.found?.length) {
+        setStatus({ ok: false, msg: 'captured data but no recognizable fields' });
+        return;
+      }
+      applyPatch(parsed.patch);
+      reportSuccess(parsed.patch, ' from DDB');
+    } catch (e) {
+      console.error('[grimoire] refreshFromDdb error:', e);
+      setStatus({ ok: false, msg: e?.message || String(e) });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const importJson = async ({ file } = {}) => {
+    setBusy(true);
+    setStatus(null);
+    try {
+      const result = file ? await importDdbJsonFile(file) : parseDdbJson(jsonText);
+      if (!result.found?.length) {
+        setStatus({ ok: false, msg: 'no recognizable character fields found in this JSON' });
+        return;
+      }
+      applyPatch(result.patch);
+      const captured = result.capturedAt ? ` (captured ${new Date(result.capturedAt).toLocaleString()})` : '';
+      reportSuccess(result.patch, `${captured} from DDB JSON`);
+      setJsonText('');
+    } catch (e) {
+      console.error('[grimoire] importJson error:', e);
+      setStatus({ ok: false, msg: e?.message || String(e) });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const onJsonFile = async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    setStatus(null);
+    try {
+      // Match the picker pattern: load into textarea so the user can
+      // inspect before submitting.
+      setJsonText(await file.text());
+    } catch (err) {
+      setStatus({ ok: false, msg: err.message || String(err) });
+    }
+  };
+
+  const onCopyBookmarklet = async () => {
+    try {
+      await navigator.clipboard.writeText(DDB_BOOKMARKLET);
+      setBookmarkCopied(true);
+      setTimeout(() => setBookmarkCopied(false), 1500);
+    } catch {
+      setStatus({ ok: false, msg: 'clipboard write failed — select the textarea below and copy manually' });
+    }
   };
 
   const importPdfFile = async () => {
@@ -623,8 +719,46 @@ function DdbImport({ setCharacter }) {
 
   return (
     <SectionCard title="Import Character sheet">
+      {/* Primary path: one-click refresh from DDB via an embedded
+          BrowserWindow. Cookies persist in a dedicated 'persist:ddb'
+          Electron session so the user logs in once and subsequent
+          refreshes find the auth already in place. Renderer-only
+          fallback (no Electron bridge) hides this section. */}
+      {canRefresh && (
+        <div className="mb-4 pb-3 border-b border-gold">
+          <div className="font-display text-xs text-gold uppercase tracking-wider mb-1.5">
+            ↻ Refresh from D&amp;D Beyond <span className="text-fade not-italic font-cmd lowercase">(recommended)</span>
+          </div>
+          <div className="text-xs text-fade italic mb-2">
+            paste your character's DDB URL once. on refresh, an embedded browser opens; click DDB's <span className="text-parchment not-italic">Print to PDF</span> / <span className="text-parchment not-italic">Download</span> button — Grimoire captures the data and applies the patch.
+          </div>
+          <input
+            type="url"
+            className="lined w-full mb-2"
+            placeholder="https://www.dndbeyond.com/characters/12345678"
+            value={character.ddbUrl || ''}
+            onChange={e => setDdbUrl(e.target.value)}
+            disabled={busy}
+          />
+          <div className="flex items-center gap-2 flex-wrap">
+            <button
+              type="button"
+              onClick={refreshFromDdb}
+              disabled={busy || !character.ddbUrl?.trim()}
+              className="text-xs font-cmd uppercase tracking-wider text-gold border border-gold-strong px-3 py-1.5 hover:bg-active transition disabled:opacity-30"
+            >
+              {busy ? '… refreshing' : '↻ Refresh from DDB'}
+            </button>
+            <span className="text-[11px] text-fade italic">
+              first run: log in to DDB inside the window — cookies stick after that.
+            </span>
+          </div>
+          <ImportStatus status={status} className="mt-2 block" />
+        </div>
+      )}
+
       <div className="text-xs text-fade italic mb-2">
-        select a D&amp;D Beyond character-sheet <span className="font-cmd text-gold">.pdf</span> export — best-effort field extraction.
+        or, select a D&amp;D Beyond character-sheet <span className="font-cmd text-gold">.pdf</span> export — best-effort field extraction.
         importing will overwrite character info (ability scores, HP, AC, etc.) — modifiers are left alone.
       </div>
       <div className="flex items-center gap-3 flex-wrap">
@@ -651,6 +785,107 @@ function DdbImport({ setCharacter }) {
         )}
       </div>
       <ImportStatus status={status} className="mt-2 block" />
+
+      {/* JSON path — captures from DDB via the bookmarklet. Richer
+          than the PDF path (DDB pre-computes everything in the export
+          blob), but requires one-time bookmarklet setup. */}
+      <div className="mt-4 pt-3 border-t border-gold">
+        <div className="flex items-baseline justify-between mb-1.5 flex-wrap gap-2">
+          <div className="font-display text-xs text-gold uppercase tracking-wider">
+            or, import from DDB JSON <span className="text-fade not-italic font-cmd lowercase normal-case">(recommended)</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setJsonHelpOpen(o => !o)}
+            className="text-[10px] font-cmd uppercase tracking-wider text-fade hover:text-gold transition"
+          >
+            {jsonHelpOpen ? 'hide setup' : 'how to capture'}
+          </button>
+        </div>
+        <div className="text-xs text-fade italic mb-2">
+          paste / load a JSON file captured from D&amp;D Beyond via the bookmarklet. carries the full pre-computed character — no PDF heuristics.
+        </div>
+
+        {jsonHelpOpen && (
+          <div className="border border-gold rounded-sm p-3 bg-grimoire space-y-3 mb-2">
+            <div>
+              <div className="font-display text-xs text-gold uppercase tracking-wider mb-1">
+                Recommended: DevTools copy
+              </div>
+              <div className="text-fade text-[11px] italic mb-1">
+                Always works. ~30 seconds.
+              </div>
+              <ol className="text-fade text-xs italic space-y-1 list-decimal pl-4">
+                <li>Open your character on D&amp;D Beyond.</li>
+                <li>Open DevTools (<span className="text-parchment not-italic font-cmd">F12</span>) → <span className="text-parchment not-italic">Network</span> tab.</li>
+                <li>Click DDB's <span className="text-parchment not-italic">Print to PDF</span> / <span className="text-parchment not-italic">Download</span> button.</li>
+                <li>Find the request to <span className="font-cmd text-gold not-italic">/character/v5/pdf</span> → click it.</li>
+                <li>Switch to the <span className="text-parchment not-italic">Payload</span> tab → click <span className="text-parchment not-italic">view source</span> at the top → select all + copy.</li>
+                <li>Paste back here in the JSON textarea and click Import &amp; overwrite.</li>
+              </ol>
+            </div>
+            <div className="border-t border-gold pt-2">
+              <div className="font-display text-xs text-gold uppercase tracking-wider mb-1">
+                Fallback: bookmarklet
+              </div>
+              <div className="text-fade text-[11px] italic mb-1">
+                May not work on all browsers — DDB's bundler caches <span className="font-cmd">fetch</span> at module load, so our intercept arrives too late on some setups. Use DevTools above if this fails silently.
+              </div>
+              <button
+                type="button"
+                onClick={onCopyBookmarklet}
+                className="text-xs font-cmd uppercase tracking-wider text-gold border border-gold-strong px-3 py-1.5 hover:bg-active transition"
+              >
+                {bookmarkCopied ? '✓ copied' : '📋 Copy bookmarklet'}
+              </button>
+            </div>
+          </div>
+        )}
+
+        <textarea
+          className="w-full font-cmd text-xs bg-card border border-gold rounded-sm p-2 text-parchment resize-y"
+          rows={4}
+          placeholder='paste captured JSON here (or use 📁 to load a .json file)'
+          value={jsonText}
+          onChange={e => setJsonText(e.target.value)}
+          disabled={busy}
+        />
+        <div className="flex items-center gap-2 mt-2 flex-wrap">
+          <button
+            type="button"
+            onClick={() => jsonFileRef.current?.click()}
+            disabled={busy}
+            className="text-xs font-cmd uppercase tracking-wider text-fade hover:text-parchment border border-gold px-3 py-1.5 hover:bg-active transition disabled:opacity-50"
+          >
+            📁 Load .json file
+          </button>
+          <button
+            type="button"
+            onClick={() => importJson()}
+            disabled={busy || !jsonText.trim()}
+            className="text-xs font-cmd uppercase tracking-wider text-gold border border-gold-strong px-3 py-1.5 hover:bg-active transition disabled:opacity-30"
+          >
+            {busy ? '… importing' : '↓ import & overwrite'}
+          </button>
+          {jsonText.trim() && (
+            <button
+              type="button"
+              onClick={() => { setJsonText(''); setStatus(null); }}
+              disabled={busy}
+              className="text-xs font-cmd uppercase tracking-wider text-fade hover:text-crimson disabled:opacity-50"
+            >
+              ✕ clear
+            </button>
+          )}
+          <input
+            ref={jsonFileRef}
+            type="file"
+            accept="application/json,.json"
+            className="hidden"
+            onChange={onJsonFile}
+          />
+        </div>
+      </div>
 
       <div className="text-xs text-fade italic mt-3 pt-2 border-t border-gold">
         fills: identity (name · race · class · level) · combat (HP · AC · prof bonus) · ability scores · saves · skills · attacks · spells · spell slots. modifiers stay manual.

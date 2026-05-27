@@ -1,4 +1,4 @@
-const { app, BrowserWindow, shell, ipcMain, net } = require('electron');
+const { app, BrowserWindow, shell, ipcMain, net, session } = require('electron');
 const path = require('path');
 const { execFile } = require('node:child_process');
 const fs = require('node:fs');
@@ -511,4 +511,98 @@ ipcMain.handle('import-monster-from-json', async (_event, jsonText) => {
   } catch (e) {
     return { ok: false, error: e.message };
   }
+});
+
+// ─── DDB character refresh (in-app browser) ────────────────────────────────
+// One-click "refresh this character from D&D Beyond" by opening a
+// BrowserWindow to the user's DDB character page and intercepting the
+// /character/v5/pdf POST at the network layer.
+//
+// Why network-layer interception instead of a bookmarklet: DDB's bundle
+// captures `window.fetch` at module load, so any JS-level monkey-patch
+// applied later (bookmarklet, devtools snippet) misses the call. The
+// session.webRequest.onBeforeRequest hook below fires before the
+// request leaves Chromium's networking stack — it doesn't care how DDB
+// called fetch.
+//
+// Auth piggybacks on the embedded BrowserWindow: we use a dedicated
+// `persist:ddb` session so DDB cookies live in their own jar, isolated
+// from the main app. First refresh prompts a DDB login; subsequent
+// refreshes find the session already authed.
+//
+// Returns { body } on success or { cancelled: true } if the user
+// closes the window without clicking DDB's Print/Download. Either way,
+// the renderer is responsible for parsing the body via parseDdbJson.
+
+ipcMain.handle('refresh-character-from-ddb', async (event, characterUrl) => {
+  let parsedUrl;
+  try {
+    parsedUrl = new URL(characterUrl);
+  } catch {
+    throw new Error('not a valid URL');
+  }
+  if (!/(^|\.)dndbeyond\.com$/i.test(parsedUrl.host)) {
+    throw new Error(`expected a dndbeyond.com URL, got "${parsedUrl.host}"`);
+  }
+
+  return new Promise((resolve, reject) => {
+    const ddbSession = session.fromPartition('persist:ddb');
+    const parentWin = BrowserWindow.fromWebContents(event.sender);
+
+    const win = new BrowserWindow({
+      width: 1100,
+      height: 800,
+      title: 'Refresh from D&D Beyond — click Print/Download when ready',
+      parent: parentWin || undefined,
+      autoHideMenuBar: true,
+      backgroundColor: '#14100c',
+      webPreferences: {
+        session: ddbSession,
+        sandbox: true,
+        nodeIntegration: false,
+        contextIsolation: true,
+      },
+    });
+
+    let captured = false;
+    const filter = { urls: ['*://character-service.dndbeyond.com/character/v*/pdf*'] };
+
+    const onRequest = (details, callback) => {
+      // Always allow the request to proceed so DDB's own PDF download
+      // still works (nice freebie for the user).
+      callback({});
+      if (captured) return;
+      try {
+        const data = details.uploadData;
+        if (!data || !data.length) return;
+        const chunks = data.map(d => (d.bytes ? Buffer.from(d.bytes) : Buffer.alloc(0)));
+        const body = Buffer.concat(chunks).toString('utf8');
+        if (!body || !body.includes('exportData')) return;
+        captured = true;
+        // Detach the listener so a second click doesn't try to resolve
+        // the already-fulfilled Promise.
+        try { ddbSession.webRequest.onBeforeRequest(filter, null); } catch {}
+        // Give DDB's request a moment to finish before closing — early
+        // close aborts their PDF mid-flight which is jarring even if
+        // our capture is complete.
+        setTimeout(() => { if (!win.isDestroyed()) win.close(); }, 800);
+        resolve({ body });
+      } catch (e) {
+        console.error('[grimoire] ddb refresh capture failed', e);
+      }
+    };
+
+    ddbSession.webRequest.onBeforeRequest(filter, onRequest);
+
+    win.on('closed', () => {
+      try { ddbSession.webRequest.onBeforeRequest(filter, null); } catch {}
+      if (!captured) resolve({ cancelled: true });
+    });
+
+    win.loadURL(characterUrl).catch(err => {
+      try { ddbSession.webRequest.onBeforeRequest(filter, null); } catch {}
+      if (!win.isDestroyed()) win.close();
+      reject(new Error(`failed to load ${characterUrl}: ${err.message}`));
+    });
+  });
 });

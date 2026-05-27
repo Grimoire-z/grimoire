@@ -155,6 +155,12 @@ export const DEFAULT_CHARACTER = {
   // modifier library, separate from globalModifiers at the top level.
   portrait: null,
   modifiers: [],
+  // DDB character URL (e.g., https://www.dndbeyond.com/characters/12345).
+  // When set, CharacterView's "Refresh from DDB" button opens this URL
+  // in an embedded BrowserWindow and intercepts the /pdf POST body via
+  // session.webRequest. Empty string means the refresh button is hidden
+  // until the user pastes their URL.
+  ddbUrl: '',
 };
 
 // Factory for a fresh character with a unique id. `name` lets callers
