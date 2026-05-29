@@ -1,6 +1,9 @@
+import { useEffect, useState } from 'react';
 import { SectionCard } from '../components.jsx';
 
 export default function TargetsView({ targets, setTargets, folders, setFolders }) {
+  const [importing, setImporting] = useState(false);
+
   const addFolder = () => {
     const id = `fld_${Date.now().toString(36)}`;
     setFolders(prev => [...prev, { id, name: 'New Folder' }]);
@@ -30,6 +33,39 @@ export default function TargetsView({ targets, setTargets, folders, setFolders }
     setTargets(prev => prev.map(t => t.id === id ? { ...t, folderId: folderId || undefined } : t));
   };
 
+  // Bulk import: takes a list of names + a folder destination and
+  // appends them all as new targets. Folder can be an existing id, a
+  // sentinel `__new__:Name` request to create a fresh folder first,
+  // or `null`/empty for ungrouped. Optional autoNumber suffixes
+  // repeated names (Goblin/Goblin/Goblin → Goblin 1/2/3) so they're
+  // distinguishable in selection.
+  const bulkImport = ({ names, folderId, newFolderName, autoNumber }) => {
+    if (!names.length) return;
+
+    let resolvedFolderId = folderId || undefined;
+    let folderToAdd = null;
+    if (newFolderName) {
+      const fid = `fld_${Date.now().toString(36)}`;
+      folderToAdd = { id: fid, name: newFolderName };
+      resolvedFolderId = fid;
+    }
+
+    const finalNames = autoNumber ? numberDuplicates(names) : names;
+
+    // Allocate ids deterministically — Date.now() can collide if we
+    // create N targets in the same millisecond, so include an index.
+    const stamp = Date.now().toString(36);
+    const newTargets = finalNames.map((name, i) => ({
+      id: `tgt_${stamp}_${i}`,
+      name,
+      folderId: resolvedFolderId,
+    }));
+
+    if (folderToAdd) setFolders(prev => [...prev, folderToAdd]);
+    setTargets(prev => [...prev, ...newTargets]);
+    setImporting(false);
+  };
+
   // Resolve targets that reference a deleted/missing folder back to ungrouped
   // for display purposes.
   const folderIds = new Set(folders.map(f => f.id));
@@ -40,10 +76,16 @@ export default function TargetsView({ targets, setTargets, folders, setFolders }
     <main className="relative z-10 px-6 pb-12 max-w-7xl mx-auto mt-4 space-y-5">
       <div className="flex items-baseline justify-between">
         <h2 className="font-display text-gold text-sm">FOLDERS</h2>
-        <button onClick={addFolder}
-                className="text-xs font-cmd uppercase tracking-wider text-gold border border-gold px-3 py-1.5 hover:bg-active transition">
-          + new folder
-        </button>
+        <div className="flex gap-2">
+          <button onClick={() => setImporting(true)}
+                  className="text-xs font-cmd uppercase tracking-wider text-gold border border-gold px-3 py-1.5 hover:bg-active transition">
+            ↓ import list
+          </button>
+          <button onClick={addFolder}
+                  className="text-xs font-cmd uppercase tracking-wider text-gold border border-gold px-3 py-1.5 hover:bg-active transition">
+            + new folder
+          </button>
+        </div>
       </div>
       <div className="divider" />
 
@@ -76,8 +118,208 @@ export default function TargetsView({ targets, setTargets, folders, setFolders }
           empty — click <span className="text-gold">+ new folder</span> to start, or just add ungrouped targets below
         </div>
       )}
+
+      {importing && (
+        <ImportListModal
+          folders={folders}
+          onCancel={() => setImporting(false)}
+          onImport={bulkImport}
+        />
+      )}
     </main>
   );
+}
+
+// ─── Bulk-import modal ────────────────────────────────────────────────
+// Paste a list of names (newline- and/or comma-separated), pick a
+// folder destination (existing / new / ungrouped), optionally turn on
+// auto-numbering so duplicate names become Goblin 1, Goblin 2, etc.
+// Submit creates them all in one shot via bulkImport in the parent.
+
+const FOLDER_NEW = '__new__';
+const FOLDER_UNGROUPED = '';
+
+function ImportListModal({ folders, onCancel, onImport }) {
+  const [text, setText] = useState('');
+  const [folderChoice, setFolderChoice] = useState(FOLDER_UNGROUPED);
+  const [newFolderName, setNewFolderName] = useState('');
+  const [autoNumber, setAutoNumber] = useState(true);
+
+  const names = parseNameList(text);
+  const preview = autoNumber ? numberDuplicates(names) : names;
+
+  const folderLabel =
+    folderChoice === FOLDER_NEW
+      ? (newFolderName.trim() ? `new folder "${newFolderName.trim()}"` : 'new folder (name required)')
+      : folderChoice === FOLDER_UNGROUPED
+        ? 'Ungrouped'
+        : folders.find(f => f.id === folderChoice)?.name || '(unknown folder)';
+
+  const canImport =
+    names.length > 0 &&
+    (folderChoice !== FOLDER_NEW || newFolderName.trim().length > 0);
+
+  const submit = () => {
+    if (!canImport) return;
+    onImport({
+      names: preview,
+      folderId: folderChoice === FOLDER_NEW || folderChoice === FOLDER_UNGROUPED ? null : folderChoice,
+      newFolderName: folderChoice === FOLDER_NEW ? newFolderName.trim() : null,
+      // bulkImport applies autoNumber itself; we've already done it
+      // in `preview`, so pass `false` to avoid double-numbering.
+      autoNumber: false,
+    });
+  };
+
+  useEffect(() => {
+    const onKey = (e) => { if (e.key === 'Escape') onCancel(); };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [onCancel]);
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center px-4 py-6 overflow-y-auto"
+      style={{ backgroundColor: 'rgba(0, 0, 0, 0.65)' }}
+      onClick={onCancel}
+    >
+      <div
+        className="bg-card border border-gold-strong rounded-sm max-w-lg w-full p-5 my-auto"
+        style={{ boxShadow: '0 20px 60px rgba(0,0,0,0.7), 0 0 0 1px rgba(var(--color-gold-rgb), 0.15)' }}
+        onClick={e => e.stopPropagation()}
+      >
+        <h3 className="font-display text-lg text-gold uppercase tracking-wider mb-2">
+          Import target list
+        </h3>
+        <p className="text-fade text-sm italic mb-3">
+          Paste names — one per line, comma-separated, or even an Avrae <span className="font-cmd text-gold">-t "Name|"</span> command string. The wrapper syntax gets stripped.
+        </p>
+
+        <textarea
+          className="w-full font-cmd text-sm bg-grimoire border border-gold rounded-sm p-2 text-parchment resize-y"
+          rows={6}
+          placeholder='Aragorn&#10;Legolas&#10;Gimli&#10;&#10;or: Aragorn, Legolas, Gimli'
+          value={text}
+          onChange={e => setText(e.target.value)}
+          autoFocus
+        />
+
+        <div className="mt-3 space-y-2">
+          <label className="text-fade text-xs uppercase tracking-wider block">Destination</label>
+          <select
+            className="lined w-full"
+            value={folderChoice}
+            onChange={e => setFolderChoice(e.target.value)}
+          >
+            <option value={FOLDER_UNGROUPED}>(Ungrouped)</option>
+            {folders.map(f => (
+              <option key={f.id} value={f.id}>{f.name}</option>
+            ))}
+            <option value={FOLDER_NEW}>+ create new folder…</option>
+          </select>
+          {folderChoice === FOLDER_NEW && (
+            <input
+              className="lined w-full"
+              placeholder="new folder name"
+              value={newFolderName}
+              onChange={e => setNewFolderName(e.target.value)}
+              autoFocus
+            />
+          )}
+        </div>
+
+        <label className="flex items-center gap-2 mt-3 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={autoNumber}
+            onChange={e => setAutoNumber(e.target.checked)}
+            className="w-3.5 h-3.5"
+          />
+          <span className="text-xs text-parchment">
+            Auto-number duplicates
+            <span className="text-fade italic"> — Goblin/Goblin → Goblin 1, Goblin 2</span>
+          </span>
+        </label>
+
+        {names.length > 0 && (
+          <div className="mt-3 pt-3 border-t border-gold">
+            <div className="text-xs text-fade italic mb-1">
+              Will create {preview.length} target{preview.length === 1 ? '' : 's'} in {folderLabel}.
+            </div>
+            <div className="font-cmd text-xs text-parchment max-h-32 overflow-y-auto scrollbar-thin">
+              {preview.map((n, i) => (
+                <div key={i} className="truncate">· {n}</div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        <div className="flex justify-end gap-2 mt-4">
+          <button
+            type="button"
+            onClick={onCancel}
+            className="text-xs font-cmd uppercase tracking-wider text-fade hover:text-parchment border border-gold px-3 py-1.5 hover:bg-active transition"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={submit}
+            disabled={!canImport}
+            className="text-xs font-cmd uppercase tracking-wider text-gold border border-gold-strong px-3 py-1.5 hover:bg-active transition disabled:opacity-30"
+          >
+            ↓ Import {names.length > 0 && `(${preview.length})`}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Extract target names from pasted text. Two input flavors handled:
+//
+//   1. Plain list — newline- or comma-separated names
+//      ("Aragorn\nLegolas\nGimli" or "Aragorn, Legolas, Gimli").
+//
+//   2. Avrae command syntax — `-t "Name|conditions"` repeated, often
+//      on one line (e.g. `-t "Harkul|" -t "Goblin 1|"`). Anything
+//      between double-quotes wins when quotes are present; the `-t`,
+//      quote marks, and `|...` suffix are all stripped, leaving just
+//      the name (with any trailing number intact).
+//
+// When the text contains any quoted strings we prefer those, since
+// they're an explicit marker of intent. Falls back to the plain split
+// otherwise. Mixed pastes (some quoted, some bare) take the quoted
+// path — bare lines in that case are treated as command-line noise.
+function parseNameList(text) {
+  const quoted = [...text.matchAll(/"([^"]*)"/g)].map(m => m[1]);
+  const raw = quoted.length > 0 ? quoted : text.split(/[\n,]/);
+
+  return raw
+    .map(s => {
+      let n = s.trim();
+      // Strip Avrae `|conditions` suffix — keep what's before the
+      // pipe so "Goblin 1|isImmune=fire" becomes "Goblin 1".
+      const pipe = n.indexOf('|');
+      if (pipe >= 0) n = n.slice(0, pipe);
+      return n.trim();
+    })
+    .filter(s => s.length > 0);
+}
+
+// If a name appears more than once, suffix each occurrence with " 1",
+// " 2", etc. so the rendered list is distinguishable. Comparison is
+// case-sensitive — "Goblin" and "goblin" stay distinct.
+function numberDuplicates(names) {
+  const counts = new Map();
+  for (const n of names) counts.set(n, (counts.get(n) || 0) + 1);
+  const seen = new Map();
+  return names.map(n => {
+    if (counts.get(n) === 1) return n;
+    const idx = (seen.get(n) || 0) + 1;
+    seen.set(n, idx);
+    return `${n} ${idx}`;
+  });
 }
 
 function FolderCard({ folder, targets, allFolders, onRename, onDelete, onAddTarget, onRenameTarget, onRemoveTarget, onMoveTarget }) {

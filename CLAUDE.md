@@ -26,7 +26,7 @@ This file is the source of truth for project memory. It's committed to the repo 
 - `electron/preload.cjs` — exposes `window.grimoire` (platform info)
 - `src/main.jsx` — Vite entry
 - `src/App.jsx` — top-level component: header, vault/bestiary routing, mode switching (Vault / Bestiary / Roll / Character / Targets / Modifiers / Settings). Holds the `characters` map + `activeCharacterId` (player mode) and the `monsters` map + `monsterFolders` (DM mode). Derives `activeCharacter` from the active id. Header nav list is `MODES_PLAYER` or `MODES_DM` based on `settings.dmMode`.
-- `src/state.js` — DEFAULT_CHARACTER, DEFAULT_MODIFIERS, DEFAULT_SETTINGS (incl. `dmMode`), SAVE_DEFS, SKILL_DEFS, `makeCharacterId`/`makeBlankCharacter`/`makeMonsterId`/`makeBlankMonster`/`defaultVault` (vault helpers), `migrate` chain (v1→v2→v3, called inside `loadState` and `parseImport`), `loadState`/`saveState`, `downloadExport`/`parseImport`
+- `src/state.js` — DEFAULT_CHARACTER, DEFAULT_MODIFIERS, DEFAULT_SETTINGS (incl. `dmMode`), SAVE_DEFS, SKILL_DEFS, EFFECT_LABELS/PLACEHOLDERS/DESCRIPTIONS/HAS_VALUE/NO_VALUE_BLURB (effect-type registry consumed by ModifierForge + composer), `makeCharacterId`/`makeBlankCharacter`/`makeMonsterId`/`makeBlankMonster`/`defaultVault` (vault helpers), `migrate` chain (v1→v2→v3→v4, called inside `loadState` and `parseImport`), `loadState`/`saveState`, `downloadExport`/`parseImport`
 - `src/composer.js` — pure command composition (compose, composeFromMod, substituteParams)
 - `src/ddbPdfImport.js` — D&D Beyond fillable PDF importer; uses pdfjs-dist worker via `?worker` Vite import. Kept as a fallback path; the primary import flow in v0.9.3+ goes through `ddbJsonImport.js` (see "DDB character refresh" below). pdfjs-dist itself is dynamic-imported via a memoized `loadPdfjs()` helper inside this file — keeps the main bundle ~270KB instead of ~660KB. **Don't re-add a top-level `import * as pdfjs from 'pdfjs-dist'`** or the chunk-split benefit goes away.
 - `src/ddbJsonImport.js` — DDB JSON importer (v0.9.3+). Maps the `exportData` blob that DDB's web client POSTs to `character-service.dndbeyond.com/character/v5/pdf` into our character-patch shape. Consumed by both the in-app Refresh-from-DDB flow (network-layer webRequest interception) and the JSON paste/file fallback paths. Also exports `DDB_BOOKMARKLET` — kept for reference / extreme fallback, but it doesn't reliably intercept since DDB's bundle caches `window.fetch` at module load.
@@ -94,6 +94,51 @@ One-click "refresh this character from D&D Beyond" lives in `CharacterView`'s Im
   - `armorClass` in DDB exports has been observed to be nonsensically low (Harkul's L13 wizard came through as `armorClass: 5`, ignoring Mage Armor / Spellwoven Robe). We import as-is and let the user override in the sheet — don't try to "fix" DDB's export.
 - **Preload bridge**: `window.grimoire.refreshCharacterFromDdb(url)` returns `{ body }` or `{ cancelled: true }`. Throws (rejected Promise) on URL validation errors or page-load failures. The renderer side (`DdbImport` in `CharacterView`) gates the whole Refresh section on this bridge being present, so renderer-only verification contexts (plain `vite dev` without Electron) hide it instead of breaking.
 - **HMR caveat**: `electron/main.cjs` / `electron/preload.cjs` changes don't HMR — restart `npm run electron:dev` after touching them. (Already documented under DM mode but worth restating since this section adds another main-process IPC handler.)
+
+### DM/player mode separation (v0.9.4+)
+
+DM mode and player mode each carry their own **independent** modifier library, targets, and folders. Flipping the `dmMode` toggle in Settings preserves everything on both sides — the active mode just picks which slices the views read/write.
+
+- **New persisted slices** (schema v4): `dmModifiers`, `dmTargets`, `dmFolders` live alongside the existing `globalModifiers` / `targets` / `folders`. App.jsx wires the views conditionally based on `settings.dmMode`:
+  - `DmRollView` reads `dmModifiers` + `dmTargets`/`dmFolders` (was `globalModifiers` + player `targets`/`folders` in v0.9.3 and earlier).
+  - `TargetsView` reads/writes the DM versions when `dmMode` is on, regular slices otherwise.
+  - `ModifierForgeView` receives `dmModifiers` in the `globalModifiers` slot when `dmMode` is on (the editor's "Global" library functionally becomes the DM library — see below).
+- **Migration v3 → v4** (`migrateV3ToV4` in `state.js`) **deep-clones** `globalModifiers` into `dmModifiers` so DM mode keeps access to whatever the user had shared previously. Edits diverge from there — modifying a mod on one side doesn't touch the other side's copy. `dmTargets` and `dmFolders` start empty (targets are usually session-specific; copying the player set would just need pruning).
+- **Fresh installs** seed `dmModifiers` with a clone of `DEFAULT_MODIFIERS` (the same Advantage / Disadvantage / Bless / Bardic Inspiration the player side gets), so the base buffs are present in both modes from day one.
+- **`ModifierForgeView` accepts a `dmMode` prop** that adjusts behavior for the DM library context: the "This character" `ScopeGroup` hides (no character context exists), the Global library is relabeled "DM library", and `+ new` lands directly in the DM library instead of routing through the (no-op) character setter. The per-modifier Global scope toggle in the editor also hides — there's no character side to flip to.
+- **Backup files** written from v0.9.3 or earlier auto-upgrade through the migrate chain on import; v0.9.4 backups carry all six slices (player + DM) so a round-trip is lossless.
+
+### Modifier effect-type vocabulary (v0.9.4+)
+
+The `+ add` button row in `ModifierForgeView`'s Effects section expanded from six effect types to thirteen, covering most of Avrae's argument vocabulary. The registry lives in `state.js` (one export per concern — `EFFECT_LABELS` for button text, `EFFECT_DESCRIPTIONS` for hover tooltips, `EFFECT_PLACEHOLDERS` for input hints, `EFFECT_HAS_VALUE` for type dispatch, `EFFECT_NO_VALUE_BLURB` for the EffectRow explanation when no value field is rendered); composer branches in `composer.js` emit the right Avrae flag for each.
+
+| Type | Flag | Common use |
+|---|---|---|
+| `bonus` | `-b <v>` | Bless, Bardic Inspiration |
+| `damage` | `-d "<v>"` | Sneak Attack, Hex, Hunter's Mark |
+| `crit` | `-c "<v>"` | Improved Divine Smite, vorpal weapons |
+| `adv` | `adv` | Advantage on the d20 |
+| `dis` | `dis` | Disadvantage on the d20 |
+| `ro` | `-ro <N>` | Reroll each die *once* if ≤ N — Great Weapon Fighting uses 2 |
+| `rr` | `-rr <N>` | Reroll each die *repeatedly* until > N |
+| `mi` | `-mi <N>` | Minimum die value (Empowered Spell etc.) |
+| `max` | `-max` | Maximize every damage die (Empowered Evocation, Vorpal crits) |
+| `dtype` | `-dtype "<v>"` | Damage type swap (Divine Smite turning slashing into radiant) |
+| `hide` | `-h` | Hidden roll (DM-only) |
+| `phrase` | `-phrase "<v>"` | Flavor text appended to the result |
+| `raw` | passthrough | Any arbitrary Avrae arg |
+
+Don't conflate `ro` and `rr` in tooltips — Great Weapon Fighting is specifically `-ro 2` (reroll once), *not* `-rr 2` (reroll repeatedly). The earlier v0.9.4 button labeled `Reroll low dice` with GWF as the example used the wrong flag; current labels are `Reroll once` (ro) and `Reroll repeatedly` (rr).
+
+### Targets bulk import (v0.9.4+)
+
+`TargetsView` has a `↓ import list` button next to `+ new folder` that opens an `ImportListModal`. Paste a list of names, pick a destination (existing folder / new folder / Ungrouped), optionally toggle auto-number-duplicates, preview the parsed result, and submit — all created in one `bulkImport` call.
+
+- **Two input shapes** handled by `parseNameList`:
+  - Plain list — newline- or comma-separated names.
+  - Avrae command syntax — `-t "Name|conditions"` repeated, often all on one line (e.g. `-t "Harkul|" -t "Goblin 1|"`). When the input contains any quoted strings the parser prefers those (explicit marker of intent); the `-t`, quote marks, and `|...` suffix are all stripped, leaving just the name with any trailing number intact.
+- **Auto-number duplicates** (on by default) suffixes repeated names with ` 1`, ` 2`, … so a `Goblin/Goblin/Goblin` paste becomes distinguishable in selection. Case-sensitive — `Goblin` and `goblin` stay distinct.
+- **Folder creation** is in-flow: picking `+ create new folder…` reveals a name input and the folder gets created alongside the targets in the same submit (so we don't leave behind empty folders if the user bails).
 
 ### Composer
 

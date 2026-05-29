@@ -6,7 +6,7 @@
 
 import { DEFAULT_THEME_ID, DEFAULT_FONT_PRESET_ID } from './themes.js';
 
-export const SCHEMA_VERSION = 3;
+export const SCHEMA_VERSION = 4;
 
 export const DEFAULT_SETTINGS = {
   theme: DEFAULT_THEME_ID,
@@ -228,19 +228,69 @@ export const DEFAULT_MODIFIERS = [
 
 export const APPLIES_KINDS = ['attack', 'spell', 'save', 'check'];
 
+// Effect-type registry. The shape used to be three parallel objects;
+// keeping that to avoid churn but new types should land here so the
+// editor's button row, the composer, and the EffectRow input copy all
+// stay in sync. `EFFECT_DESCRIPTIONS` shows on hover for each button.
+// Effect-type registry. The shape used to be three parallel objects;
+// keeping that to avoid churn but new types should land here so the
+// editor's button row, the composer, and the EffectRow input copy all
+// stay in sync. `EFFECT_DESCRIPTIONS` shows on hover for each button.
 export const EFFECT_LABELS = {
-  bonus: 'Bonus to hit', damage: 'Extra damage',
-  adv: 'Advantage', dis: 'Disadvantage',
-  phrase: 'Flavor phrase', raw: 'Raw arg',
+  bonus:  'Bonus to hit',
+  damage: 'Extra damage',
+  crit:   'Crit damage',
+  adv:    'Advantage',
+  dis:    'Disadvantage',
+  ro:     'Reroll once',
+  rr:     'Reroll repeatedly',
+  mi:     'Min die value',
+  max:    'Maximize damage',
+  dtype:  'Damage type swap',
+  hide:   'Hidden roll',
+  phrase: 'Flavor phrase',
+  raw:    'Raw arg',
 };
 export const EFFECT_PLACEHOLDERS = {
-  bonus: '1d4   or   2',
+  bonus:  '1d4   or   2',
   damage: '2d6 [fire]',
+  crit:   '2d6 [radiant]',
+  ro:     '2',
+  rr:     '2',
+  mi:     '2',
+  dtype:  'radiant   or   slashing>radiant',
   phrase: 'critical strike!',
-  raw: '-rr 2   or   -h',
+  raw:    '-rr 2   or   -h',
 };
-export const EFFECT_HAS_VALUE = (t) =>
-  t === 'bonus' || t === 'damage' || t === 'phrase' || t === 'raw';
+// Tooltip shown when hovering each + add button; keeps the buttons
+// themselves compact while still teaching the user what each maps to.
+export const EFFECT_DESCRIPTIONS = {
+  bonus:  '-b <value> · extra to hit (Bless, Bardic Inspiration, etc.)',
+  damage: '-d <value> · extra damage on a hit (Sneak Attack, Hex, Hunter’s Mark)',
+  crit:   '-c <value> · extra damage on a crit (Improved Divine Smite, vorpal weapons)',
+  adv:    'adv · advantage on the d20',
+  dis:    'dis · disadvantage on the d20',
+  ro:     '-ro <N> · reroll each damage die once if it rolls ≤ N (Great Weapon Fighting uses 2)',
+  rr:     '-rr <N> · reroll each damage die repeatedly until it rolls > N',
+  mi:     '-mi <N> · minimum die value, used by some metamagics',
+  max:    '-max · maximize every damage die (Empowered Evocation, Vorpal crits)',
+  dtype:  '-dtype <new> · change damage type (e.g. Divine Smite turns slashing into radiant)',
+  hide:   '-h · hidden roll (DM screen — result is private)',
+  phrase: '-phrase "<text>" · flavor text appended to the result',
+  raw:    'pass-through · any arbitrary Avrae arg',
+};
+// Effects whose flag takes a value (gets the text input). The rest are
+// boolean-style flags that just emit a marker (adv, dis, hide, max).
+const VALUE_TYPES = new Set(['bonus', 'damage', 'crit', 'ro', 'rr', 'mi', 'dtype', 'phrase', 'raw']);
+export const EFFECT_HAS_VALUE = (t) => VALUE_TYPES.has(t);
+// Short blurb shown in the EffectRow when the effect doesn't take a
+// value — replaces the input field with a faded explanation.
+export const EFFECT_NO_VALUE_BLURB = {
+  adv:  'rolls the d20 with advantage',
+  dis:  'rolls the d20 with disadvantage',
+  hide: 'roll result is hidden — DM-only',
+  max:  'every damage die maxes out',
+};
 
 // ─── Fresh-install initial state ──────────────────────────────────────────
 
@@ -254,6 +304,15 @@ export function defaultVault() {
     folders: [],
     monsters: {},
     monsterFolders: [],
+    // DM-mode slices live alongside the player-mode ones; the active
+    // mode picks which the views read/write. Fresh installs seed the
+    // DM modifier library with the same defaults the player side gets
+    // (Advantage / Disadvantage / Bless / Bardic Inspiration) so the
+    // base buffs are present in both modes from day one. Targets and
+    // folders start empty since they're typically session-specific.
+    dmModifiers: JSON.parse(JSON.stringify(DEFAULT_MODIFIERS)),
+    dmTargets: [],
+    dmFolders: [],
     settings: { ...DEFAULT_SETTINGS },
   };
 }
@@ -265,6 +324,13 @@ export function defaultVault() {
 // per-character modifiers slot (empty by default).
 // v2 → v3: adds empty bestiary slices (`monsters`, `monsterFolders`) and
 // the new `settings.dmMode` flag. Existing player-mode state is untouched.
+// v3 → v4: separates DM-mode targets and modifiers from player-mode.
+// `dmModifiers` is seeded with a deep clone of the current
+// `globalModifiers` so DM mode keeps access to whatever the user had
+// shared before; they're independent thereafter and edits don't leak.
+// `dmTargets` / `dmFolders` start empty (targets tend to be session-
+// specific anyway — copying the player set into DM would just need
+// pruning).
 // `migrate()` chains the migrators in sequence so installs from any prior
 // version land on the current schema in one pass.
 
@@ -298,10 +364,25 @@ function migrateV2ToV3(v2) {
   };
 }
 
+function migrateV3ToV4(v3) {
+  return {
+    ...v3,
+    schemaVersion: 4,
+    // Deep-clone globalModifiers so the new DM library starts with the
+    // same set the user already had access to, but is functionally
+    // independent — editing a mod on the DM side from here forward
+    // doesn't touch the player-side copy.
+    dmModifiers: JSON.parse(JSON.stringify(v3.globalModifiers || DEFAULT_MODIFIERS)),
+    dmTargets: [],
+    dmFolders: [],
+  };
+}
+
 function migrate(payload) {
   let s = payload;
   if (s?.schemaVersion === 1) s = migrateV1ToV2(s);
   if (s?.schemaVersion === 2) s = migrateV2ToV3(s);
+  if (s?.schemaVersion === 3) s = migrateV3ToV4(s);
   return s;
 }
 
@@ -390,8 +471,8 @@ export function parseImport(text) {
     }
   }
 
-  // Auto-migrate older payloads forward (v1 → v2 → v3) so backups from any
-  // prior version stay importable.
+  // Auto-migrate older payloads forward (v1 → v2 → v3 → v4) so backups
+  // from any prior version stay importable.
   const migrated = migrate(parsed);
 
   if (migrated?.schemaVersion !== SCHEMA_VERSION) {

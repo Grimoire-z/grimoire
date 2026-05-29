@@ -11,13 +11,19 @@
 
 import { useMemo, useState } from 'react';
 import { composeFromMod } from '../composer.js';
-import { APPLIES_KINDS, EFFECT_LABELS, EFFECT_PLACEHOLDERS, EFFECT_HAS_VALUE } from '../state.js';
+import { APPLIES_KINDS, EFFECT_LABELS, EFFECT_PLACEHOLDERS, EFFECT_HAS_VALUE, EFFECT_DESCRIPTIONS, EFFECT_NO_VALUE_BLURB } from '../state.js';
 import { Checkbox } from '../components.jsx';
 
 export default function ModifierForgeView({
   characterModifiers, setCharacterModifiers,
   globalModifiers,    setGlobalModifiers,
   activeMods, setActiveMods,
+  // When dmMode is on, the editor is operating on the DM library
+  // (dmModifiers passed in via globalModifiers slot). There's no
+  // character context, so character-private modifiers, the Global
+  // scope toggle, and the character ScopeGroup all hide; + new
+  // creates directly in the DM library instead of in characterMods.
+  dmMode = false,
 }) {
   // Tag each mod with its scope and merge for display. Character first so
   // the library list groups visually by scope when scrolled.
@@ -40,8 +46,9 @@ export default function ModifierForgeView({
     setter(prev => prev.map(m => m.id === selectedId ? { ...m, ...patch } : m));
   };
 
-  // New mods always start character-private. Promote via the editor's
-  // Global toggle if you want to share across characters.
+  // New mods default to character-private in player mode (promote via
+  // the Global toggle in the editor). In DM mode there's no character
+  // scope, so + new lands directly in the DM library.
   const newModifier = () => {
     const id = `mod_${Date.now().toString(36)}`;
     const fresh = {
@@ -50,7 +57,8 @@ export default function ModifierForgeView({
       effects: [{ type: 'bonus', value: '' }],
       params: [],
     };
-    setCharacterModifiers(prev => [...prev, fresh]);
+    const setter = dmMode ? setGlobalModifiers : setCharacterModifiers;
+    setter(prev => [...prev, fresh]);
     setSelectedId(id);
   };
 
@@ -110,11 +118,19 @@ export default function ModifierForgeView({
           </button>
         </div>
         <div className="divider mb-3" />
-        <ScopeGroup label="This character" entries={tagged.filter(t => t.scope === 'character')}
-                    selectedId={selectedId} onSelect={setSelectedId} emptyHint="no per-character modifiers yet" />
-        <div className="mt-4" />
-        <ScopeGroup label="Global" entries={tagged.filter(t => t.scope === 'global')}
-                    selectedId={selectedId} onSelect={setSelectedId} emptyHint="no global modifiers" />
+        {!dmMode && (
+          <>
+            <ScopeGroup label="This character" entries={tagged.filter(t => t.scope === 'character')}
+                        selectedId={selectedId} onSelect={setSelectedId} emptyHint="no per-character modifiers yet" />
+            <div className="mt-4" />
+          </>
+        )}
+        <ScopeGroup
+          label={dmMode ? 'DM library' : 'Global'}
+          entries={tagged.filter(t => t.scope === 'global')}
+          selectedId={selectedId}
+          onSelect={setSelectedId}
+          emptyHint={dmMode ? 'no DM modifiers yet — click + new to add one' : 'no global modifiers'} />
       </section>
 
       <section className="lg:col-span-3">
@@ -131,6 +147,7 @@ export default function ModifierForgeView({
             onToggleScope={toggleScope}
             onDelete={deleteSelected}
             onDuplicate={duplicateSelected}
+            dmMode={dmMode}
           />
         )}
       </section>
@@ -182,7 +199,7 @@ function ModifierRow({ mod, active, onSelect }) {
   );
 }
 
-function ModifierEditor({ mod, scope, allMods, update, onToggleScope, onDelete, onDuplicate }) {
+function ModifierEditor({ mod, scope, allMods, update, onToggleScope, onDelete, onDuplicate, dmMode }) {
   const toggleApplies = (kind) => {
     const next = mod.applies.includes(kind)
       ? mod.applies.filter(k => k !== kind)
@@ -242,17 +259,19 @@ function ModifierEditor({ mod, scope, allMods, update, onToggleScope, onDelete, 
                    onChange={e => update({ sub: e.target.value })}
                    placeholder="e.g. +1d4 to attacks · concentration" />
           </div>
-          <div className="flex items-center justify-between gap-3 mt-1 pt-3 border-t border-gold">
-            <div className="min-w-0">
-              <div className="text-fade text-xs uppercase tracking-wider">Scope</div>
-              <div className="text-xs text-fade italic">
-                {isGlobal
-                  ? 'shared across every character'
-                  : 'only available to this character'}
+          {!dmMode && (
+            <div className="flex items-center justify-between gap-3 mt-1 pt-3 border-t border-gold">
+              <div className="min-w-0">
+                <div className="text-fade text-xs uppercase tracking-wider">Scope</div>
+                <div className="text-xs text-fade italic">
+                  {isGlobal
+                    ? 'shared across every character'
+                    : 'only available to this character'}
+                </div>
               </div>
+              <Checkbox label="Global" checked={isGlobal} onChange={onToggleScope} compact />
             </div>
-            <Checkbox label="Global" checked={isGlobal} onChange={onToggleScope} compact />
-          </div>
+          )}
         </div>
       </div>
 
@@ -302,6 +321,7 @@ function ModifierEditor({ mod, scope, allMods, update, onToggleScope, onDelete, 
           <span className="text-fade text-xs uppercase tracking-wider mr-1">+ add:</span>
           {Object.entries(EFFECT_LABELS).map(([type, label]) => (
             <button key={type} onClick={() => addEffect(type)}
+              title={EFFECT_DESCRIPTIONS[type] || ''}
               className="text-xs font-cmd text-gold border border-gold px-2 py-0.5 hover:bg-active transition rounded-sm">
               {label}
             </button>
@@ -356,6 +376,7 @@ function ModifierEditor({ mod, scope, allMods, update, onToggleScope, onDelete, 
 
 function EffectRow({ effect, onChange, onDelete }) {
   const hasValue = EFFECT_HAS_VALUE(effect.type);
+  const blurb = EFFECT_NO_VALUE_BLURB[effect.type] || '';
   return (
     <div className="flex gap-3 items-center bg-grimoire border border-gold rounded-sm px-3 py-2">
       <span className="font-display text-xs text-gold uppercase tracking-wider w-28 flex-shrink-0">
@@ -366,7 +387,7 @@ function EffectRow({ effect, onChange, onDelete }) {
                onChange={e => onChange({ value: e.target.value })}
                placeholder={EFFECT_PLACEHOLDERS[effect.type]} />
       ) : (
-        <span className="text-fade italic flex-1 text-sm">— rolls the d20 with {effect.type === 'adv' ? 'advantage' : 'disadvantage'} —</span>
+        <span className="text-fade italic flex-1 text-sm">— {blurb} —</span>
       )}
       <button onClick={onDelete} className="text-fade hover:text-crimson text-sm">✕</button>
     </div>

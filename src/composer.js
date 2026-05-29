@@ -17,8 +17,15 @@ export function composeFromMod(mod, paramSelections) {
   for (const eff of mod.effects) {
     if      (eff.type === 'bonus')  out.push(`-b ${sub(eff.value)}`);
     else if (eff.type === 'damage') out.push(`-d "${sub(eff.value)}"`);
+    else if (eff.type === 'crit')   out.push(`-c "${sub(eff.value)}"`);
     else if (eff.type === 'adv')    out.push('adv');
     else if (eff.type === 'dis')    out.push('dis');
+    else if (eff.type === 'ro')     out.push(`-ro ${sub(eff.value)}`);
+    else if (eff.type === 'rr')     out.push(`-rr ${sub(eff.value)}`);
+    else if (eff.type === 'mi')     out.push(`-mi ${sub(eff.value)}`);
+    else if (eff.type === 'max')    out.push('-max');
+    else if (eff.type === 'dtype')  out.push(`-dtype "${sub(eff.value)}"`);
+    else if (eff.type === 'hide')   out.push('-h');
     else if (eff.type === 'phrase') out.push(`-phrase "${sub(eff.value)}"`);
     else if (eff.type === 'raw')    out.push(sub(eff.value));
   }

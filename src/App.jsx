@@ -52,10 +52,17 @@ export default function App() {
   const [monsters,       setMonsters]       = useState(initial.monsters || {});
   const [monsterFolders, setMonsterFolders] = useState(initial.monsterFolders || []);
 
-  // Other persisted slices.
+  // Other persisted slices. Player and DM modes each have their own
+  // modifier library + targets/folders so a roomful of DM-only buffs
+  // doesn't clutter player rolls (and vice versa). The active mode
+  // picks which slices the views read/write; both stay persisted
+  // either way so flipping the mode toggle preserves everything.
   const [globalModifiers, setGlobalModifiers] = useState(initial.globalModifiers || DEFAULT_MODIFIERS);
   const [targets,         setTargets]         = useState(initial.targets || []);
   const [folders,         setFolders]         = useState(initial.folders || []);
+  const [dmModifiers,     setDmModifiers]     = useState(initial.dmModifiers || DEFAULT_MODIFIERS);
+  const [dmTargets,       setDmTargets]       = useState(initial.dmTargets || []);
+  const [dmFolders,       setDmFolders]       = useState(initial.dmFolders || []);
   const [settings,        setSettings]        = useState({ ...DEFAULT_SETTINGS, ...(initial.settings || {}) });
 
   // Derive the active character object.
@@ -126,8 +133,20 @@ export default function App() {
 
   // Persist whenever the durable bits change.
   useEffect(() => {
-    saveState({ characters, activeCharacterId, globalModifiers, targets, folders, monsters, monsterFolders, settings });
-  }, [characters, activeCharacterId, globalModifiers, targets, folders, monsters, monsterFolders, settings]);
+    saveState({
+      characters, activeCharacterId,
+      globalModifiers, targets, folders,
+      monsters, monsterFolders,
+      dmModifiers, dmTargets, dmFolders,
+      settings,
+    });
+  }, [
+    characters, activeCharacterId,
+    globalModifiers, targets, folders,
+    monsters, monsterFolders,
+    dmModifiers, dmTargets, dmFolders,
+    settings,
+  ]);
 
   // Mode-toggle safety: keep `mode` valid as dmMode flips. Player-only
   // modes (vault, character) auto-route to bestiary on flip-to-DM;
@@ -158,6 +177,9 @@ export default function App() {
     if (next.folders)           setFolders(next.folders);
     if (next.monsters)          setMonsters(next.monsters);
     if (next.monsterFolders)    setMonsterFolders(next.monsterFolders);
+    if (next.dmModifiers)       setDmModifiers(next.dmModifiers);
+    if (next.dmTargets)         setDmTargets(next.dmTargets);
+    if (next.dmFolders)         setDmFolders(next.dmFolders);
     if (next.settings)          setSettings(s => ({ ...DEFAULT_SETTINGS, ...next.settings }));
     // Stay on / return to the home surface after a bulk replace so the
     // user sees what just landed before diving in. Home is mode-aware.
@@ -389,8 +411,8 @@ export default function App() {
       {dmMode && mode === 'roll' && (
         <DmRollView
           monsters={Object.values(monsters).filter(m => m.active)}
-          modifiers={globalModifiers}
-          targets={targets} folders={folders}
+          modifiers={dmModifiers}
+          targets={dmTargets} folders={dmFolders}
           selectedTargets={selectedTargets} setSelectedTargets={setSelectedTargets}
           activeMods={activeMods} setActiveMods={setActiveMods}
           modParams={modParams} setModParams={setModParams}
@@ -409,23 +431,33 @@ export default function App() {
       )}
       {mode === 'targets' && (
         <TargetsView
-          targets={targets} setTargets={setTargets}
-          folders={folders} setFolders={setFolders}
+          targets={dmMode ? dmTargets : targets}
+          setTargets={dmMode ? setDmTargets : setTargets}
+          folders={dmMode ? dmFolders : folders}
+          setFolders={dmMode ? setDmFolders : setFolders}
         />
       )}
       {mode === 'modifiers' && (
         <ModifierForgeView
           key={dmMode ? 'dm' : charKey}
+          dmMode={dmMode}
           characterModifiers={dmMode ? [] : characterModifiers}
           setCharacterModifiers={dmMode ? (() => {}) : setCharacterModifiers}
-          globalModifiers={globalModifiers} setGlobalModifiers={setGlobalModifiers}
+          globalModifiers={dmMode ? dmModifiers : globalModifiers}
+          setGlobalModifiers={dmMode ? setDmModifiers : setGlobalModifiers}
           activeMods={activeMods} setActiveMods={setActiveMods}
         />
       )}
       {mode === 'settings' && (
         <SettingsView
           settings={settings} setSettings={setSettings}
-          state={{ characters, activeCharacterId, globalModifiers, targets, folders, monsters, monsterFolders, settings }}
+          state={{
+            characters, activeCharacterId,
+            globalModifiers, targets, folders,
+            monsters, monsterFolders,
+            dmModifiers, dmTargets, dmFolders,
+            settings,
+          }}
           replaceState={replaceState}
         />
       )}
