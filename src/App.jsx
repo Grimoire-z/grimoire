@@ -1,6 +1,6 @@
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import {
-  DEFAULT_SETTINGS, DEFAULT_MODIFIERS,
+  DEFAULT_SETTINGS, DEFAULT_MODIFIERS, SCHEMA_VERSION,
   loadState, saveState, defaultVault,
   makeCharacterId, makeBlankCharacter,
   makeMonsterId, makeBlankMonster,
@@ -162,6 +162,32 @@ export default function App() {
     dmModifiers, dmTargets, dmFolders,
     settings,
   ]);
+
+  // Rolling on-disk snapshots (Electron only) — same-machine crash
+  // protection, distinct from the manual JSON export. We keep the latest
+  // persist payload in a ref and hand it to the main process at most once
+  // per 10 minutes of activity, plus once on window close (beforeunload).
+  // Main writes a timestamped copy under userData/snapshots and keeps the
+  // newest 10; Settings → Backup & Restore can restore one.
+  const snapshotStateRef = useRef(null);
+  snapshotStateRef.current = {
+    schemaVersion: SCHEMA_VERSION,
+    characters, activeCharacterId,
+    globalModifiers, targets, folders,
+    monsters, monsterFolders,
+    dmModifiers, dmTargets, dmFolders,
+    settings,
+  };
+  useEffect(() => {
+    if (!window.grimoire?.writeSnapshot) return; // Electron-only feature
+    const writeSnap = () => {
+      try { window.grimoire.writeSnapshot(JSON.stringify(snapshotStateRef.current)); } catch { /* best-effort */ }
+    };
+    const id = setInterval(writeSnap, 10 * 60 * 1000);
+    window.addEventListener('beforeunload', writeSnap);
+    return () => { clearInterval(id); window.removeEventListener('beforeunload', writeSnap); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Mode-toggle safety: keep `mode` valid as dmMode flips. Player-only
   // modes (vault, character) auto-route to bestiary on flip-to-DM;

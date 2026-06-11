@@ -198,7 +198,78 @@ function BackupRestoreSection({ state, replaceState }) {
       <p className="text-fade text-[11px] italic mt-3">
         Import replaces all data — there's no merge. The file's schema version must match this app's.
       </p>
+      <SnapshotsPanel replaceState={replaceState} setStatus={setStatus} />
     </SectionCard>
+  );
+}
+
+// Local automatic snapshots (Electron only). Same-machine crash protection —
+// the main process writes a timestamped copy of the state every ~10 min and
+// on close, keeping the newest 10. Restoring funnels through the same
+// parseImport → replaceState path as a JSON import.
+function SnapshotsPanel({ replaceState, setStatus }) {
+  const [snaps, setSnaps] = useState(null);
+
+  const refresh = async () => {
+    if (!window.grimoire?.listSnapshots) return;
+    const res = await window.grimoire.listSnapshots();
+    if (res?.ok) setSnaps(res.snapshots);
+  };
+
+  useEffect(() => { refresh(); }, []);
+
+  if (!window.grimoire?.listSnapshots) return null; // hidden outside Electron
+
+  const restore = async (name) => {
+    try {
+      const res = await window.grimoire.readSnapshot(name);
+      if (!res?.ok) throw new Error(res?.error || 'could not read snapshot');
+      const parsed = parseImport(res.json);
+      const ok = window.confirm(
+        `Restore this snapshot?\n\nIt replaces ALL current data on this device. ` +
+        `Export first if you want to keep what's here.`
+      );
+      if (!ok) return;
+      replaceState(parsed);
+      const count = Object.keys(parsed.characters || {}).length;
+      setStatus({ ok: true, msg: `restored ${count} character${count === 1 ? '' : 's'} from snapshot` });
+    } catch (e) {
+      setStatus({ ok: false, msg: e.message || String(e) });
+    }
+  };
+
+  return (
+    <div className="mt-4 pt-3 border-t border-gold">
+      <div className="flex items-baseline justify-between mb-1 gap-2">
+        <div className="font-display text-xs text-gold uppercase tracking-wider">Snapshots on this machine</div>
+        <button onClick={refresh} className="text-[10px] font-cmd uppercase tracking-wider text-fade hover:text-gold transition">
+          refresh
+        </button>
+      </div>
+      <p className="text-fade text-[11px] italic mb-2">
+        Automatic local backups (every ~10 min and on close; newest 10 kept) — crash protection, separate from the JSON export above.
+      </p>
+      {snaps == null ? (
+        <div className="text-fade italic text-xs">loading…</div>
+      ) : snaps.length === 0 ? (
+        <div className="text-fade italic text-xs">no snapshots yet — they start appearing after ~10 minutes of use</div>
+      ) : (
+        <div className="space-y-1 max-h-44 overflow-y-auto scrollbar-thin">
+          {snaps.map(s => (
+            <div key={s.name} className="flex items-center gap-2 text-xs font-cmd">
+              <span className="text-parchment flex-1 truncate">{new Date(s.mtime).toLocaleString()}</span>
+              <span className="text-fade flex-shrink-0">{Math.max(1, Math.round(s.size / 1024))} KB</span>
+              <button
+                onClick={() => restore(s.name)}
+                className="text-gold border border-gold px-2 py-0.5 rounded-sm hover:bg-active transition flex-shrink-0"
+              >
+                restore
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
 

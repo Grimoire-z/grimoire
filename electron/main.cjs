@@ -682,3 +682,66 @@ ipcMain.handle('refresh-character-from-ddb', async (event, characterUrl) => {
     });
   });
 });
+
+// ─── On-disk state snapshots ───────────────────────────────────────────────
+// Same-machine crash protection (NOT cross-device sync — the settled manual
+// export/import workflow is untouched). The renderer hands us the same JSON
+// payload it persists to localStorage; we write a timestamped copy under
+// userData/snapshots and keep the newest SNAPSHOT_KEEP. localStorage is
+// otherwise the only store, so a Chromium profile corruption / accidental
+// "clear site data" would take the whole vault with it.
+
+const SNAPSHOT_DIR = path.join(app.getPath('userData'), 'snapshots');
+const SNAPSHOT_KEEP = 10;
+
+function listSnapshotFiles() {
+  fs.mkdirSync(SNAPSHOT_DIR, { recursive: true });
+  return fs.readdirSync(SNAPSHOT_DIR)
+    .filter(f => f.startsWith('grimoire-') && f.endsWith('.json'))
+    .sort(); // lexical sort == chronological given the timestamp filename
+}
+
+ipcMain.handle('write-snapshot', async (_event, json) => {
+  try {
+    if (typeof json !== 'string' || !json.trim()) return { ok: false, error: 'empty payload' };
+    fs.mkdirSync(SNAPSHOT_DIR, { recursive: true });
+    const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+    fs.writeFileSync(path.join(SNAPSHOT_DIR, `grimoire-${stamp}.json`), json, 'utf8');
+    const files = listSnapshotFiles();
+    while (files.length > SNAPSHOT_KEEP) {
+      const old = files.shift();
+      try { fs.unlinkSync(path.join(SNAPSHOT_DIR, old)); } catch {}
+    }
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+});
+
+ipcMain.handle('list-snapshots', async () => {
+  try {
+    const files = listSnapshotFiles().reverse(); // newest first
+    return {
+      ok: true,
+      snapshots: files.map(f => {
+        const st = fs.statSync(path.join(SNAPSHOT_DIR, f));
+        return { name: f, size: st.size, mtime: st.mtimeMs };
+      }),
+    };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+});
+
+ipcMain.handle('read-snapshot', async (_event, name) => {
+  try {
+    // Only plain basenames in our own dir — no path traversal.
+    if (typeof name !== 'string' || /[/\\]|\.\./.test(name)) {
+      throw new Error('invalid snapshot name');
+    }
+    const json = fs.readFileSync(path.join(SNAPSHOT_DIR, name), 'utf8');
+    return { ok: true, json };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+});

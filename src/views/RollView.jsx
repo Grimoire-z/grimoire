@@ -16,8 +16,9 @@ export default function RollView({
   composed, setComposed, history, setHistory, copied, setCopied,
 }) {
   const [spellLevel, setSpellLevel] = useState(null);
-  // Track the most recently fired action so the source row can highlight,
-  // matching the screenshot's purple "last clicked" treatment. Reset on
+  // The most recently fired action OBJECT — drives both the source-row
+  // highlight (lastFired.kind/.id) and the ComposerBar re-fire button (which
+  // re-runs fire() with the current target/modifier selections). Reset on
   // character switch via App.jsx's `key={activeCharacterId}` remount.
   const [lastFired, setLastFired] = useState(null);
   const emit = useComposerEmit({ setComposed, setHistory, setCopied });
@@ -31,9 +32,29 @@ export default function RollView({
       activeMods: Object.keys(activeMods),
       modParams, modifiers, custom,
     });
-    setLastFired({ kind: action.kind, id: action.id });
+    setLastFired(action);
     emit(action.label, cmd);
-  }, [activeMods, modParams, modifiers, custom, targets, selectedTargets, emit]);
+    // Auto-expend the slot actually spent (the upcast level). Cantrips
+    // (upcastTo 0) are skipped; an already-empty level is left alone rather
+    // than blocking the cast — Avrae decrements its own sheet regardless.
+    if (action.kind === 'spell' && action.upcastTo >= 1) {
+      updateCharacter(ch => {
+        const slot = ch.spellSlots?.[action.upcastTo];
+        if (!slot || slot.current <= 0) return ch;
+        return {
+          ...ch,
+          spellSlots: { ...ch.spellSlots, [action.upcastTo]: { ...slot, current: slot.current - 1 } },
+        };
+      });
+    }
+  }, [activeMods, modParams, modifiers, custom, targets, selectedTargets, emit, updateCharacter]);
+
+  // Re-fire the last action with whatever targets/modifiers are selected
+  // NOW — the "same attack, next goblin" loop. Re-expending a slot on a
+  // re-fired spell is intentional (it's a real second cast).
+  const refire = useCallback(() => {
+    if (lastFired) fire(lastFired);
+  }, [lastFired, fire]);
 
   // Avrae's !cast handles spell attacks — so any "attack" whose id matches
   // a spell is redundant in the Attacks tab. Filter at render time so the
@@ -59,26 +80,48 @@ export default function RollView({
   const togglePreparedOnly = () =>
     setSettings(s => ({ ...s, preparedOnly: !s.preparedOnly }));
 
+  // ── Favorites ── per-character pinned actions. `fav.has(descriptor)`
+  // tests membership and `fav.toggle(descriptor)` flips it; descriptors are
+  // { kind, id, level? } (level only on spells, since the same spell id can
+  // sit at two levels). Drives the star on each CompactRow and the pinned
+  // strip above the grid.
+  const favorites = character.favorites || [];
+  const favKeyOf = (f) => `${f.kind}:${f.id}:${f.level ?? ''}`;
+  const favSet = new Set(favorites.map(favKeyOf));
+  const toggleFav = useCallback((descriptor) => {
+    const k = `${descriptor.kind}:${descriptor.id}:${descriptor.level ?? ''}`;
+    updateCharacter(ch => {
+      const list = ch.favorites || [];
+      const exists = list.some(f => `${f.kind}:${f.id}:${f.level ?? ''}` === k);
+      return { ...ch, favorites: exists ? list.filter(f => `${f.kind}:${f.id}:${f.level ?? ''}` !== k) : [...list, descriptor] };
+    });
+  }, [updateCharacter]);
+  const fav = { has: (f) => favSet.has(favKeyOf(f)), toggle: toggleFav };
+
   return (
     <>
       <main className="relative z-10 px-6 pb-40 max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-5 gap-5 mt-4">
         <section className="lg:col-span-3">
+          <FavoritesStrip favorites={favorites} character={character} castLevel={castLevel} fire={fire} />
           <div className="grid grid-cols-1 md:grid-cols-6 gap-3">
             <div className="md:col-span-1 space-y-3">
               <SavesColumn
                 character={character}
                 fire={fire}
                 lastFired={lastFired}
+                fav={fav}
               />
               <SpellSlotsTracker
                 character={character}
                 updateCharacter={updateCharacter}
+                emit={emit}
               />
             </div>
             <SkillsColumn
               character={character}
               fire={fire}
               lastFired={lastFired}
+              fav={fav}
             />
             <ActionsColumn
               tab={tab} setTab={setTab}
@@ -90,6 +133,7 @@ export default function RollView({
               castLevel={castLevel} setCastLevel={setCastLevel}
               fire={fire}
               lastFired={lastFired}
+              fav={fav}
               preparedOnly={preparedOnly}
               onTogglePreparedOnly={togglePreparedOnly}
             />
@@ -111,6 +155,8 @@ export default function RollView({
         composed={composed} setComposed={setComposed}
         copied={copied} setCopied={setCopied}
         history={history}
+        emit={emit}
+        onRefire={lastFired ? refire : null}
       />
     </>
   );
@@ -120,7 +166,7 @@ export default function RollView({
 // Compact list of the six ability saves. Each row: proficiency dot,
 // ability code, modifier value. Whole row is clickable → !save.
 
-function SavesColumn({ character, fire, lastFired }) {
+function SavesColumn({ character, fire, lastFired, fav }) {
   return (
     <div>
       <ColumnHeader>Saving Throws</ColumnHeader>
@@ -130,6 +176,7 @@ function SavesColumn({ character, fire, lastFired }) {
           const active = lastFired?.kind === 'save' && lastFired?.id === def.id;
           return (
             <CompactRow key={def.id} active={active}
+              fav={fav} favDescriptor={{ kind: 'save', id: def.id }}
               onClick={() => fire({ kind: 'save', id: def.id, label: `${def.name} save` })}>
               <ProfDot prof={s.prof} />
               <span className="font-display text-xs tracking-wide text-parchment">{def.name}</span>
@@ -151,7 +198,7 @@ function SavesColumn({ character, fire, lastFired }) {
 // SpellLevelHeader on the Spells tab and the character sheet itself
 // pick the change up automatically.
 
-function SpellSlotsTracker({ character, updateCharacter }) {
+function SpellSlotsTracker({ character, updateCharacter, emit }) {
   const slots = character.spellSlots || {};
   const usedLevels = [1, 2, 3, 4, 5, 6, 7, 8, 9]
     .filter(lvl => (slots[lvl]?.max ?? 0) > 0);
@@ -172,9 +219,9 @@ function SpellSlotsTracker({ character, updateCharacter }) {
     });
   };
 
-  // Refill every leveled slot to its max — quick long-rest helper so
-  // the user doesn't have to click each dot back individually.
-  const resetAll = () => {
+  // Long rest: emit !g lr AND refill every dot — the common case (you rest,
+  // Avrae resets, the tracker resets in one gesture).
+  const longRest = () => {
     updateCharacter(ch => {
       const next = { ...(ch.spellSlots || {}) };
       for (const lvl of usedLevels) {
@@ -183,19 +230,36 @@ function SpellSlotsTracker({ character, updateCharacter }) {
       }
       return { ...ch, spellSlots: next };
     });
+    emit?.('Long Rest', '!g lr');
   };
+
+  // Short rest: emit !g sr only, dots untouched. CLAUDE.md documents that the
+  // tracker sums wizard + pact slots into one {current,max}; short rest
+  // restores only pact slots, so a blanket dot-refill would drift for every
+  // non-warlock caster.
+  const shortRest = () => emit?.('Short Rest', '!g sr');
 
   return (
     <div>
       <ColumnHeader right={
-        <button
-          type="button"
-          onClick={resetAll}
-          title="restore all spell slots"
-          className="font-cmd text-[10px] uppercase tracking-wider text-fade hover:text-gold transition"
-        >
-          ↻ reset
-        </button>
+        <span className="flex gap-2">
+          <button
+            type="button"
+            onClick={shortRest}
+            title="short rest — copies !g sr (slot dots unchanged; pact slots restore in Avrae)"
+            className="font-cmd text-[10px] uppercase tracking-wider text-fade hover:text-gold transition"
+          >
+            SR
+          </button>
+          <button
+            type="button"
+            onClick={longRest}
+            title="long rest — copies !g lr and refills all slot dots"
+            className="font-cmd text-[10px] uppercase tracking-wider text-fade hover:text-gold transition"
+          >
+            ↻ LR
+          </button>
+        </span>
       }>
         Spell Slots
       </ColumnHeader>
@@ -235,7 +299,7 @@ function SpellSlotsTracker({ character, updateCharacter }) {
 // Compact list of all 18 skills. Each row: proficiency dot, ability
 // tag, skill name, modifier. Click → !check.
 
-function SkillsColumn({ character, fire, lastFired }) {
+function SkillsColumn({ character, fire, lastFired, fav }) {
   return (
     <div className="md:col-span-2 min-w-0">
       <ColumnHeader>Skills</ColumnHeader>
@@ -245,6 +309,7 @@ function SkillsColumn({ character, fire, lastFired }) {
           const active = lastFired?.kind === 'check' && lastFired?.id === def.id;
           return (
             <CompactRow key={def.id} active={active}
+              fav={fav} favDescriptor={{ kind: 'check', id: def.id }}
               onClick={() => fire({ kind: 'check', id: def.id, label: def.name })}>
               <ProfDot prof={s.prof} expertise={s.expertise} />
               <span className="font-display text-[10px] tracking-wider text-fade uppercase w-7 flex-shrink-0">
@@ -271,7 +336,7 @@ function ActionsColumn({
   spellsByLevel, populatedSpellLevels,
   spellLevel, setSpellLevel,
   castLevel, setCastLevel,
-  fire, lastFired,
+  fire, lastFired, fav,
   preparedOnly, onTogglePreparedOnly,
 }) {
   // Only attacks and spells live in this column; the old saves/skills
@@ -303,6 +368,7 @@ function ActionsColumn({
               const active = lastFired?.kind === 'attack' && lastFired?.id === a.id;
               return (
                 <CompactRow key={a.id} active={active} stacked
+                  fav={fav} favDescriptor={{ kind: 'attack', id: a.id }}
                   onClick={() => fire({ kind: 'attack', id: a.id, label: a.name, phrase: a.phrase })}>
                   <div className="min-w-0 flex-1">
                     <div className="font-display text-sm uppercase tracking-wide text-parchment truncate">{a.name}</div>
@@ -331,6 +397,7 @@ function ActionsColumn({
             castLevel={castLevel} setCastLevel={setCastLevel}
             fire={fire}
             lastFired={lastFired}
+            fav={fav}
           />
         )
       )}
@@ -338,7 +405,7 @@ function ActionsColumn({
   );
 }
 
-function SpellsPane({ character, spellsByLevel, populatedSpellLevels, spellLevel, setSpellLevel, castLevel, setCastLevel, fire, lastFired }) {
+function SpellsPane({ character, spellsByLevel, populatedSpellLevels, spellLevel, setSpellLevel, castLevel, setCastLevel, fire, lastFired, fav }) {
   const activeLevel = (spellLevel != null && populatedSpellLevels.includes(spellLevel))
     ? spellLevel
     : populatedSpellLevels[0];
@@ -375,6 +442,7 @@ function SpellsPane({ character, spellsByLevel, populatedSpellLevels, spellLevel
           const upcastTo = castAtFor(s);
           return (
             <CompactRow key={s.id} active={active} stacked
+              fav={fav} favDescriptor={{ kind: 'spell', id: s.id, level: activeLevel }}
               onClick={() => fire({
                 kind: 'spell', id: s.id, label: s.name,
                 level: activeLevel, upcastTo,
@@ -405,6 +473,55 @@ function SpellsPane({ character, spellsByLevel, populatedSpellLevels, spellLevel
   );
 }
 
+// ─── Favorites ─────────────────────────────────────────────────────────
+// Resolve a stored favorite descriptor { kind, id, level? } back to a
+// fire-able action by looking it up in the live character, so renames,
+// edits, and the current upcast selection are reflected. Returns null if
+// the source action no longer exists (deleted spell/attack) — the strip
+// just drops it.
+function resolveFavorite(f, character, castLevel) {
+  if (f.kind === 'save') {
+    const def = SAVE_DEFS.find(d => d.id === f.id);
+    return def ? { label: def.name, action: { kind: 'save', id: def.id, label: `${def.name} save` } } : null;
+  }
+  if (f.kind === 'check') {
+    const def = SKILL_DEFS.find(d => d.id === f.id);
+    return def ? { label: def.name, action: { kind: 'check', id: def.id, label: def.name } } : null;
+  }
+  if (f.kind === 'attack') {
+    const a = (character.attacks || []).find(x => x.id === f.id);
+    return a ? { label: a.name || a.id, action: { kind: 'attack', id: a.id, label: a.name, phrase: a.phrase } } : null;
+  }
+  if (f.kind === 'spell') {
+    const lvl = f.level ?? 0;
+    const s = (character.spells?.[lvl] || []).find(x => x.id === f.id);
+    if (!s) return null;
+    const upcastTo = castLevel[`${lvl}:${s.id}`] ?? lvl;
+    return { label: s.name || s.id, action: { kind: 'spell', id: s.id, label: s.name, level: lvl, upcastTo, phrase: s.phrase } };
+  }
+  return null;
+}
+
+function FavoritesStrip({ favorites, character, castLevel, fire }) {
+  const resolved = favorites.map(f => resolveFavorite(f, character, castLevel)).filter(Boolean);
+  if (resolved.length === 0) return null;
+  return (
+    <div className="mb-3 flex flex-wrap items-center gap-1.5">
+      <span className="font-display text-gold text-[10px] uppercase tracking-wider mr-1">★ favorites</span>
+      {resolved.map((r, i) => (
+        <button
+          key={i}
+          type="button"
+          onClick={() => fire(r.action)}
+          className="text-xs font-cmd text-parchment border border-gold rounded-sm px-2 py-1 hover:bg-active hover:text-gold transition"
+        >
+          {r.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 // ─── Reusable column bits ──────────────────────────────────────────────
 
 function ColumnHeader({ children, right }) {
@@ -419,18 +536,31 @@ function ColumnHeader({ children, right }) {
 // A single compact clickable row used by all three columns. `stacked`
 // gives a bit more vertical breathing room for two-line entries
 // (attacks/spells) while saves/skills stay tight on one line.
-function CompactRow({ children, active, onClick, stacked }) {
+function CompactRow({ children, active, onClick, stacked, fav, favDescriptor }) {
+  const faved = fav && favDescriptor ? fav.has(favDescriptor) : false;
   return (
     <div
       role="button"
       tabIndex={0}
       onClick={onClick}
       onKeyDown={onActivate(onClick)}
-      className={`flex items-center gap-2 cursor-pointer transition ${stacked ? 'px-2 py-1.5' : 'px-2 py-1'} ${
+      className={`group flex items-center gap-2 cursor-pointer transition ${stacked ? 'px-2 py-1.5' : 'px-2 py-1'} ${
         active ? 'bg-active glow-active' : 'hover:bg-card-hover'
       }`}
     >
       {children}
+      {fav && favDescriptor && (
+        <button
+          type="button"
+          onClick={(e) => { e.stopPropagation(); fav.toggle(favDescriptor); }}
+          title={faved ? 'unpin from favorites' : 'pin to favorites'}
+          className={`flex-shrink-0 text-sm leading-none transition ${
+            faved ? 'text-gold' : 'text-fade opacity-0 group-hover:opacity-100 hover:text-gold'
+          }`}
+        >
+          {faved ? '★' : '☆'}
+        </button>
+      )}
     </div>
   );
 }

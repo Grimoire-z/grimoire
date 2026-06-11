@@ -213,6 +213,10 @@ export const BLANK_CHARACTER = {
   portrait: null,
   modifiers: [],
   ddbUrl: '',
+  // Pinned quick-access actions for the Roll page. Each entry is
+  // { kind, id, level? } (level only for spells). Missing on older
+  // characters → treated as empty, no migration needed.
+  favorites: [],
 };
 
 // Factory for a fresh character with a unique id. Deep-clones BLANK_CHARACTER

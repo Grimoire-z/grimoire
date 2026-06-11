@@ -218,6 +218,7 @@ export default function DmRollView({
         composed={composed} setComposed={setComposed}
         copied={copied} setCopied={setCopied}
         history={history}
+        emit={emit}
       />
     </>
   );

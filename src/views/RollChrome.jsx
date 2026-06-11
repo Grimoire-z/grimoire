@@ -130,19 +130,57 @@ export function RollSidePanel({
   );
 }
 
-export function ComposerBar({ composed, setComposed, copied, setCopied, history }) {
+export function ComposerBar({ composed, setComposed, copied, setCopied, history, emit, onRefire }) {
   // Re-copy doesn't push history (it's re-firing an existing entry), so it
   // uses copyAndFlash directly rather than the full emit().
   const recopy = (cmd) => copyAndFlash(cmd, setCopied);
 
+  // Quick ad-hoc dice — composes a raw `!r <expr>` for the percentile checks,
+  // recharge dice, group re-rolls etc. that don't belong to any character
+  // action. Reuses the shared emit so it lands in history + clipboard like
+  // any other fire.
+  const [dice, setDice] = useState('');
+  const rollDice = (expr) => {
+    const e = String(expr).trim();
+    if (e && emit) emit('roll', `!r ${e}`);
+  };
+  const submitDice = () => { rollDice(dice); setDice(''); };
+
   return (
     <div className="fixed bottom-0 left-0 right-0 bg-cmd border-t border-gold-strong z-20">
       <div className="max-w-7xl mx-auto px-6 py-3">
+        {emit && (
+          <div className="flex items-center gap-2 mb-2">
+            <span className="font-display text-gold text-xs uppercase tracking-widest">roll</span>
+            <input
+              value={dice}
+              onChange={e => setDice(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter') submitDice(); }}
+              placeholder="4d6kh3 · 1d20+5 · 2d6[fire]"
+              className="lined font-cmd text-sm w-48"
+            />
+            {['1d20', '1d100', '1d6'].map(d => (
+              <button key={d} type="button" onClick={() => rollDice(d)}
+                className="text-[11px] font-cmd text-fade hover:text-gold border border-gold rounded-sm px-2 py-0.5 transition">
+                {d}
+              </button>
+            ))}
+          </div>
+        )}
         <div className="flex items-center gap-3">
           <span className="font-display text-gold text-xs uppercase tracking-widest">cmd</span>
           <code className={`font-cmd text-sm flex-1 truncate ${composed ? 'text-parchment' : 'text-fade'} ${copied ? 'flash' : ''}`}>
             {composed || 'click an action to compose a command…'}
           </code>
+          {onRefire && (
+            <button
+              onClick={onRefire}
+              title="re-fire the last action with the current targets & modifiers"
+              className="text-xs font-cmd uppercase tracking-wider text-fade hover:text-gold border border-gold px-3 py-1.5 hover:bg-active transition"
+            >
+              ↻ re-fire
+            </button>
+          )}
           {composed && (
             <button
               onClick={() => recopy(composed)}
