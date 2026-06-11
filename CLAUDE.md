@@ -177,6 +177,26 @@ Hardening from the v0.10 audit pass. localStorage is the only store, so the fail
 - **Re-fire + quick dice** (`ComposerBar`): `lastFired` now holds the full action object (still drives the row highlight via `.kind`/`.id`); a `↻ re-fire` button re-runs `fire(lastFired)` with the *current* targets/modifiers ("same attack, next goblin"). A quick-dice input + `1d20`/`1d100`/`1d6` chips compose raw `!r <expr>` through the shared `emit`. ComposerBar takes `emit` (both roll surfaces) and `onRefire` (player only for now — DmRollView re-fire lands with the batch-6 DM rework).
 - **On-disk snapshots** (Electron only, same-machine crash protection — NOT cross-device sync, which stays manual): main-process IPC `write-snapshot` / `list-snapshots` / `read-snapshot` (handlers in `main.cjs`, bridged in preload as `window.grimoire.writeSnapshot/listSnapshots/readSnapshot`). Writes timestamped copies of the persist payload to `userData/snapshots`, keeps the newest 10, path-traversal-guarded on read. App.jsx triggers a write every 10 min + on `beforeunload` via a ref to the latest state. SettingsView's Backup & Restore gains a "Snapshots on this machine" panel (hidden outside Electron) that lists them and restores through the existing `parseImport → replaceState` path.
 
+### DM-mode features (v0.10.0+, audit batch 6)
+
+The big DM push — the 5e.tools mapper was discarding most of a monster's combat-relevant data, and DmRollView only surfaced actions/legendary/saves/skills.
+
+**Mapper (`main.cjs` `mapFiveEtoolsMonster` + helpers) now also imports:**
+- `reactions` (`raw.reaction`) and `bonusActions` (`raw.bonus`) — were silently dropped. Same `{id,name,description,recharge?}` shape as actions via `extractActions`.
+- `spellcasting` (`raw.spellcasting`) via `extractSpellcasting` → `[{ name, header, spells: [{ name, level, freq }] }]`. Pulls from the leveled `spells` map (with `slots`), the at-will `will` list, and the per-day `daily` map; spell strings are de-tagged (`{@spell x}` → `x`) so `!i cast "x"` matches.
+- `resist` / `immune` / `vulnerable` / `conditionImmune` via `flattenDamageTypes` (handles the nested `{ resist:[...], note, preNote }` shapes).
+- **Recharge**: `extractActions` runs each action name through `parseRecharge`, which pulls `{@recharge 5}` / bare `{@recharge}` (=6) / hand-typed "(Recharge 5-6)" into a numeric `recharge` field AND strips it from the name. Critical: the clean name is both the button label and the id Avrae looks up, so a leftover `{@recharge 5}` would break `!i a "Breath Weapon"`.
+- **Skill-key normalization**: `normalizeSkills` maps 5e.tools' spaced-lowercase keys ("sleight of hand") to our camelCase ids ("sleightOfHand") so DmRollView/StatBlockModal recognize them for display+edit and `!i c sleightOfHand` is a single token Avrae resolves cleanly. (Monsters imported before this still have spaced keys; the composer quotes those — batch 2. Re-import fixes them.)
+
+**DmRollView card rework** — each `MonsterRollCard` now renders (all reusing `ActionCard`, which gained a forwarded `tooltip` prop showing the imported action description on hover):
+- **Actions** with recharge chips (a `R5+` button that fires `!r 1d6`); **Bonus Actions**; **Reactions** (force the offturn branch regardless of the card's OOT checkbox — reactions are out-of-turn by definition); **Spells** (`SpellcastingGroups`, fires `!i cast` with a per-card "ignore reqs (-i)" toggle for innate casting — compose() emits `-i` when `action.ignoreReqs`); **Legendary Actions** with a clickable 3-pip economy counter + reset, and a Legendary-Resistance pip row parsed from the "Legendary Resistance (N/Day)" trait.
+- **HP stepper**: damage/heal an amount → `!i hp "<cmdName>" ±N`, plus a 💀 remove → `!i remove "<cmdName>"`. Local HP mirrors for display. All card-combat state (hp, ignoreReqs, addCount, legendary pips) is card-local ephemeral, same lifetime as the parent's OOT/collapse maps.
+- **Stat block access**: the card-header monster name is a button opening `StatBlockModal` (read/edit) from the Roll surface — DmRollView gets `updateMonster` from App for the setMonster bridge.
+- **Encounter kickoff**: a per-card `×N` count drives `!i madd "<name>" -n N -name "<acro>#" -rollhp` (Avrae auto-numbers G1..GN — replaces the old duplicate-the-card workaround); a roster-level **⚔ add all to init** composes one `!multiline` block with a madd line per active monster.
+- **Re-fire**: DmRollView now tracks the full `lastFired` action and passes `onRefire` to ComposerBar (the player side got this in batch 7).
+
+**StatBlockModal** renders the new fields in both read and edit modes (reactions, bonus actions, a read-only spellcasting summary, and the four resistance/immunity lines as a Defenses section).
+
 ### Composer
 
 - `compose()` builds the Avrae command string. Spells inherit attack-mode modifiers automatically; other action kinds (attack, save, check) respect `mod.applies`.

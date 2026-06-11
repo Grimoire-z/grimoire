@@ -473,13 +473,130 @@ function slugifyActionName(name) {
   return String(name || 'action').toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
 }
 
+// Pull recharge info out of an action name and return a clean name. 5e.tools
+// embeds it as `{@recharge 5}` (or bare `{@recharge}` = recharge 6); hand-typed
+// stat blocks use "(Recharge 5-6)". Returns { recharge: 1-6|null, name }. The
+// clean name matters twice: it's the button label AND the id Avrae looks up,
+// so a stray "{@recharge 5}" left in the name would break `!i a "Breath Weapon"`.
+function parseRecharge(rawName) {
+  const s = String(rawName || '');
+  let recharge = null;
+  let name = s;
+  let m = s.match(/\{@recharge\s*(\d)?\}/i);
+  if (m) {
+    recharge = m[1] ? Number(m[1]) : 6;
+    name = s.replace(/\s*\{@recharge\s*\d?\}/i, '');
+  } else {
+    m = s.match(/\(recharge\s*(\d)(?:\s*[–-]\s*6)?\)/i);
+    if (m) {
+      recharge = Number(m[1]);
+      name = s.replace(/\s*\(recharge[^)]*\)/i, '');
+    }
+  }
+  return { recharge, name: stripFiveEtoolsTags(name).trim() };
+}
+
 function extractActions(arr) {
   if (!Array.isArray(arr)) return [];
-  return arr.map(a => ({
-    id: slugifyActionName(a.name),
-    name: a.name || '',
-    description: entriesToText(a.entries || []),
-  }));
+  return arr.map(a => {
+    const { recharge, name } = parseRecharge(a.name);
+    const action = {
+      id: slugifyActionName(name),
+      name,
+      description: entriesToText(a.entries || []),
+    };
+    if (recharge != null) action.recharge = recharge;
+    return action;
+  });
+}
+
+// Flatten 5e.tools resist/immune/vulnerable/conditionImmune arrays into a
+// readable string. Items are either plain strings ("fire") or nested objects
+// like { resist: [...], note: "from nonmagical attacks", preNote: "..." }.
+function flattenDamageTypes(arr) {
+  if (!arr) return '';
+  if (typeof arr === 'string') return arr;
+  if (!Array.isArray(arr)) return '';
+  const parts = [];
+  for (const item of arr) {
+    if (typeof item === 'string') { parts.push(item); continue; }
+    if (item && typeof item === 'object') {
+      const inner = item.resist || item.immune || item.vulnerable || item.conditionImmune;
+      const innerStr = inner ? flattenDamageTypes(inner) : (typeof item.special === 'string' ? item.special : '');
+      if (!innerStr) continue;
+      const pre = item.preNote ? `${item.preNote} ` : '';
+      const note = item.note ? ` (${item.note})` : '';
+      parts.push(`${pre}${innerStr}${note}`.trim());
+    }
+  }
+  return parts.join(', ');
+}
+
+// 5e.tools skill keys are lowercase + spaced ("sleight of hand"); our app (and
+// Avrae) use camelCase ids. Normalizing at import means DmRollView/StatBlockModal
+// recognize the key for display + edit, and the emitted `!i c <skill>` is a
+// single token Avrae resolves without the fuzzy-match gamble.
+const SKILL_KEY_MAP = {
+  'acrobatics': 'acrobatics', 'animal handling': 'animalHandling', 'arcana': 'arcana',
+  'athletics': 'athletics', 'deception': 'deception', 'history': 'history',
+  'insight': 'insight', 'intimidation': 'intimidation', 'investigation': 'investigation',
+  'medicine': 'medicine', 'nature': 'nature', 'perception': 'perception',
+  'performance': 'performance', 'persuasion': 'persuasion', 'religion': 'religion',
+  'sleight of hand': 'sleightOfHand', 'stealth': 'stealth', 'survival': 'survival',
+};
+function normalizeSkills(skillObj) {
+  if (!skillObj || typeof skillObj !== 'object') return {};
+  const out = {};
+  for (const [k, v] of Object.entries(skillObj)) {
+    out[SKILL_KEY_MAP[k.toLowerCase()] || k] = v;
+  }
+  return out;
+}
+
+// Spellcasting blocks → a flat, render-friendly shape. Each block keeps its
+// header text (DC / attack bonus) and a list of { name, level, freq } spells
+// drawn from the leveled `spells` map, the at-will `will` list, and the
+// per-day `daily` map. Spell strings carry `{@spell x}` markup which we strip
+// to the bare name (what `!i cast "x"` needs).
+function spellName(sp) {
+  if (typeof sp === 'string') return stripFiveEtoolsTags(sp).trim();
+  if (sp && typeof sp === 'object') return stripFiveEtoolsTags(sp.entry || '').trim();
+  return '';
+}
+function extractSpellcasting(arr) {
+  if (!Array.isArray(arr)) return [];
+  return arr.map(block => {
+    const spells = [];
+    if (block.spells && typeof block.spells === 'object') {
+      for (const lvl of Object.keys(block.spells)) {
+        const grp = block.spells[lvl] || {};
+        const n = Number(lvl);
+        const freq = grp.slots != null ? `${grp.slots} slots` : (n === 0 ? 'cantrip' : '');
+        for (const sp of (grp.spells || [])) {
+          const name = spellName(sp);
+          if (name) spells.push({ name, level: Number.isNaN(n) ? null : n, freq });
+        }
+      }
+    }
+    for (const sp of (block.will || [])) {
+      const name = spellName(sp);
+      if (name) spells.push({ name, level: null, freq: 'at will' });
+    }
+    if (block.daily && typeof block.daily === 'object') {
+      for (const k of Object.keys(block.daily)) {
+        const perDay = k.replace(/e$/, '');
+        for (const sp of (block.daily[k] || [])) {
+          const name = spellName(sp);
+          if (name) spells.push({ name, level: null, freq: `${perDay}/day` });
+        }
+      }
+    }
+    return {
+      name: block.name || 'Spellcasting',
+      header: entriesToText(block.headerEntries || []),
+      spells,
+    };
+  });
 }
 
 function mapFiveEtoolsMonster(raw) {
@@ -499,13 +616,21 @@ function mapFiveEtoolsMonster(raw) {
     },
     // Save / skill objects are already in `{ ability: "+N" }` shape.
     saves:     raw.save || {},
-    skills:    raw.skill || {},
+    skills:    normalizeSkills(raw.skill),
     senses:    Array.isArray(raw.senses)    ? raw.senses.join(', ')    : (raw.senses || ''),
     passive:   typeof raw.passive === 'number' ? raw.passive : null,
     languages: Array.isArray(raw.languages) ? raw.languages.join(', ') : (raw.languages || ''),
+    // Damage/condition defenses — checked on every hit, previously dropped.
+    resist:          flattenDamageTypes(raw.resist),
+    immune:          flattenDamageTypes(raw.immune),
+    vulnerable:      flattenDamageTypes(raw.vulnerable),
+    conditionImmune: flattenDamageTypes(raw.conditionImmune),
     traits:           extractActions(raw.trait),
     actions:          extractActions(raw.action),
+    bonusActions:     extractActions(raw.bonus),
+    reactions:        extractActions(raw.reaction),
     legendaryActions: extractActions(raw.legendary),
+    spellcasting:     extractSpellcasting(raw.spellcasting),
   };
 }
 

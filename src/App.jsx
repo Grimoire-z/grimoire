@@ -453,6 +453,7 @@ export default function App() {
       {dmMode && mode === 'roll' && (
         <DmRollView
           monsters={Object.values(monsters).filter(m => m.active)}
+          updateMonster={updateMonster}
           modifiers={dmModifiers}
           targets={dmTargets} folders={dmFolders} setFolders={setDmFolders}
           selectedTargets={selectedTargets} setSelectedTargets={setSelectedTargets}

@@ -93,6 +93,12 @@ export function compose({ action, activeMods, modParams, modifiers, custom }) {
   if (action.kind === 'spell' && action.upcastTo > action.level) {
     argParts.push(`-l ${action.upcastTo}`);
   }
+  // -i tells Avrae to ignore cast requirements (slots/components) — needed for
+  // a monster's at-will / X-per-day innate spells, where slot validation would
+  // otherwise refuse the cast. Set per DM-Roll card via the "ignore reqs" toggle.
+  if (action.kind === 'spell' && action.ignoreReqs) {
+    argParts.push('-i');
+  }
   // Avrae targets: -t "<name>" repeated per target, only on attacks/spells.
   if ((action.kind === 'attack' || action.kind === 'spell') && action.targets?.length) {
     for (const t of action.targets) {

@@ -13,10 +13,16 @@
 
 import { useCallback, useState } from 'react';
 import { compose } from '../composer.js';
+import { SAVE_DEFS, SKILL_DEFS } from '../state.js';
 import { ActionCard } from '../components.jsx';
 import { RollSidePanel, ComposerBar, useComposerEmit } from './RollChrome.jsx';
+import StatBlockModal from './StatBlockModal.jsx';
 
-const SAVE_LABELS = { str: 'STR', dex: 'DEX', con: 'CON', int: 'INT', wis: 'WIS', cha: 'CHA' };
+// Derived from the canonical defs (was two hand-maintained maps). The
+// `|| key` fallback at the call sites still covers monsters imported before
+// skill keys were normalized to camelCase.
+const SAVE_LABELS  = Object.fromEntries(SAVE_DEFS.map(d => [d.id, d.name]));
+const SKILL_LABELS = Object.fromEntries(SKILL_DEFS.map(d => [d.id, d.name]));
 
 // First-letter acronym of a multi-word name, uppercased. Used as the
 // combatant identifier in emitted commands so a fight against "Adult
@@ -34,40 +40,29 @@ function acronym(name) {
     .toUpperCase();
 }
 
-// 5e.tools skill keys come in two flavors (snake and camel) depending
-// on the source; we hand the raw key to Avrae's `!check` (its matcher
-// is forgiving) but display them readably.
-const SKILL_LABELS = {
-  acrobatics:      'Acrobatics',
-  animalHandling:  'Animal Handling',
-  animal_handling: 'Animal Handling',
-  arcana:          'Arcana',
-  athletics:       'Athletics',
-  deception:       'Deception',
-  history:         'History',
-  insight:         'Insight',
-  intimidation:    'Intimidation',
-  investigation:   'Investigation',
-  medicine:        'Medicine',
-  nature:          'Nature',
-  perception:      'Perception',
-  performance:     'Performance',
-  persuasion:      'Persuasion',
-  religion:        'Religion',
-  sleightOfHand:   'Sleight of Hand',
-  sleight_of_hand: 'Sleight of Hand',
-  stealth:         'Stealth',
-  survival:        'Survival',
-};
+// Truncate an action description to a tooltip-friendly length.
+function descTooltip(desc) {
+  if (!desc) return '';
+  const flat = String(desc).replace(/\s+/g, ' ').trim();
+  return flat.length > 320 ? `${flat.slice(0, 317)}…` : flat;
+}
+
+// "R5" / "R6" recharge badge text (recharge 5 means "recharges on 5-6").
+function rechargeLabel(n) {
+  return n >= 6 ? 'R6' : `R${n}+`;
+}
 
 export default function DmRollView({
-  monsters, modifiers,
+  monsters, updateMonster, modifiers,
   targets, folders, setFolders, selectedTargets, setSelectedTargets,
   activeMods, setActiveMods, modParams, setModParams,
   custom, setCustom,
   composed, setComposed, history, setHistory, copied, setCopied,
 }) {
   const emit = useComposerEmit({ setComposed, setHistory, setCopied });
+  // Full last-fired action, for the ComposerBar re-fire button (recompose
+  // with the current targets/modifiers). Ephemeral — resets on tab/mode change.
+  const [lastFired, setLastFired] = useState(null);
 
   const fire = useCallback((action) => {
     const targetNames = targets.filter(t => selectedTargets[t.id]).map(t => t.name);
@@ -76,8 +71,15 @@ export default function DmRollView({
       activeMods: Object.keys(activeMods),
       modParams, modifiers, custom,
     });
+    setLastFired(action);
     emit(action.label, cmd);
   }, [activeMods, modParams, modifiers, custom, targets, selectedTargets, emit]);
+
+  const refire = useCallback(() => { if (lastFired) fire(lastFired); }, [lastFired, fire]);
+
+  // Which monster's stat block is open in the read-only modal (id), opened
+  // from a card header so the DM can check details mid-fight.
+  const [viewingId, setViewingId] = useState(null);
 
   // Init-add bypasses the regular composer pipeline — `!i madd` isn't
   // one of the kind-driven commands and doesn't take targets/modifiers.
@@ -89,7 +91,16 @@ export default function DmRollView({
   // when an acronym exists so the registered name is predictable —
   // letting Avrae default would name it "Adult Silver Dragon" which we'd
   // then have to retype in every OOT command.
-  const fireInitAdd = useCallback((lookupName, cmdName, displayName) => {
+  const fireInitAdd = useCallback((lookupName, cmdName, displayName, count = 1, acro = '') => {
+    // count > 1: Avrae's `-n <count> -name "X#"` adds copies auto-numbered
+    // X1..Xn (and -rollhp randomizes each one's HP) — replaces the old
+    // duplicate-the-card-N-times workaround. Single add keeps the predictable
+    // -name "<cmdName>" so OOT commands can target it.
+    if (count > 1) {
+      const base = acro || acronym(lookupName) || lookupName;
+      emit(`${displayName || lookupName} · init add ×${count}`, `!i madd "${lookupName}" -n ${count} -name "${base}#" -rollhp`);
+      return;
+    }
     const cmd = cmdName && cmdName !== lookupName
       ? `!i madd "${lookupName}" -name "${cmdName}"`
       : `!i madd "${lookupName}"`;
@@ -153,6 +164,19 @@ export default function DmRollView({
     else              setCollapsedIds(Object.fromEntries(sorted.map(m => [m.id, true])));
   };
 
+  // Roster-level "add all to init" — one !multiline block with a madd line per
+  // active monster, so a whole encounter is one paste instead of N round-trips.
+  const addAllToInit = () => {
+    if (sorted.length === 0) return;
+    const lines = sorted.map(m => {
+      const a = acronym(m.name);
+      const inst = instanceById[m.id];
+      const cn = a ? (inst ? `${a}${inst}` : a) : (m.name || '');
+      return cn && cn !== m.name ? `!i madd "${m.name}" -name "${cn}"` : `!i madd "${m.name}"`;
+    });
+    emit(`Add ${sorted.length} to init`, `!multiline\n${lines.join('\n')}`);
+  };
+
   return (
     <>
       <main className="relative z-10 px-6 pb-40 max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-5 gap-5 mt-4">
@@ -164,8 +188,16 @@ export default function DmRollView({
             </div>
           ) : (
             <div>
-              {sorted.length > 1 && (
-                <div className="flex justify-end mb-2">
+              <div className="flex justify-end items-center gap-3 mb-2">
+                <button
+                  type="button"
+                  onClick={addAllToInit}
+                  title="compose a !multiline block that adds every active monster to initiative"
+                  className="text-xs font-cmd uppercase tracking-wider text-gold border border-gold px-2 py-1 hover:bg-active transition"
+                >
+                  ⚔ add all to init
+                </button>
+                {sorted.length > 1 && (
                   <button
                     type="button"
                     onClick={toggleAll}
@@ -173,8 +205,8 @@ export default function DmRollView({
                   >
                     {allCollapsed ? '▼ expand all' : '▶ collapse all'}
                   </button>
-                </div>
-              )}
+                )}
+              </div>
               <div className="space-y-5">
                 {sorted.map(m => {
                   const instance    = instanceById[m.id] || null;
@@ -187,8 +219,11 @@ export default function DmRollView({
                       monster={m}
                       cmdName={cmdName}
                       displayName={displayName}
+                      acro={acro}
                       fire={fire}
-                      onInitAdd={() => fireInitAdd(m.name, cmdName, displayName)}
+                      emit={emit}
+                      onView={() => setViewingId(m.id)}
+                      onInitAdd={(count) => fireInitAdd(m.name, cmdName, displayName, count, acro)}
                       outOfTurn={!!outOfTurnIds[m.id]}
                       onToggleOutOfTurn={() => toggleOutOfTurn(m.id)}
                       collapsed={!!collapsedIds[m.id]}
@@ -219,14 +254,27 @@ export default function DmRollView({
         copied={copied} setCopied={setCopied}
         history={history}
         emit={emit}
+        onRefire={lastFired ? refire : null}
       />
+
+      {viewingId && (() => {
+        const m = monsters.find(x => x.id === viewingId);
+        if (!m) return null;
+        return (
+          <StatBlockModal
+            monster={m}
+            setMonster={(updater) => updateMonster(viewingId, updater)}
+            onClose={() => setViewingId(null)}
+          />
+        );
+      })()}
     </>
   );
 }
 
 function MonsterRollCard({
-  monster, cmdName, displayName,
-  fire, onInitAdd,
+  monster, cmdName, displayName, acro,
+  fire, onInitAdd, onView, emit,
   outOfTurn, onToggleOutOfTurn,
   collapsed, onToggleCollapsed,
   instanceNumber, onInstanceNumberChange,
@@ -235,24 +283,35 @@ function MonsterRollCard({
   const saveEntries  = monster.saves  ? Object.entries(monster.saves).filter(([, v]) => v != null && v !== '')  : [];
   const skillEntries = monster.skills ? Object.entries(monster.skills).filter(([, v]) => v != null && v !== '') : [];
   const actions          = Array.isArray(monster.actions)          ? monster.actions          : [];
+  const bonusActions     = Array.isArray(monster.bonusActions)     ? monster.bonusActions     : [];
+  const reactions        = Array.isArray(monster.reactions)        ? monster.reactions        : [];
   const legendaryActions = Array.isArray(monster.legendaryActions) ? monster.legendaryActions : [];
+  const spellcasting     = Array.isArray(monster.spellcasting)     ? monster.spellcasting     : [];
+  const traits           = Array.isArray(monster.traits)           ? monster.traits           : [];
 
-  const hasAnyButtons = actions.length || legendaryActions.length || saveEntries.length || skillEntries.length;
+  // Legendary-resistance count parsed from the "Legendary Resistance (N/Day)"
+  // trait name, if present.
+  const legResTrait = traits.find(t => /legendary resistance/i.test(t.name || ''));
+  const legResMax = legResTrait ? (Number((String(legResTrait.name).match(/\((\d+)\s*\/\s*day\)/i) || [])[1]) || 0) : 0;
 
-  // `cmdName` is the acronymed combatant identifier ("ASD" or "ASD1");
-  // `displayName` is the human-readable form for history labels.
-  // The suffix only matters where the combatant *name* appears in a
-  // command — init-add and the `!i offturn*` family. The in-turn
-  // `!i a`/`!i s`/`!i c` commands rely on Avrae's "current combatant"
-  // pointer, so the suffix is irrelevant there.
+  const hasAnyButtons = actions.length || bonusActions.length || reactions.length ||
+    legendaryActions.length || spellcasting.length || saveEntries.length || skillEntries.length;
 
-  // Avrae's `!i a` looks up by name on the current combatant's loaded
-  // actions — pass the original action name (e.g. "Tail Slap"), not the
-  // slugified id, so the lookup succeeds. `initContext: true` flips
-  // compose() from the player `!attack` form to the init-aware `!i a`.
-  // When the per-card `outOfTurn` checkbox is on, compose() further
-  // flips to `!i offturnattack "<cmdName>" "<action>"` so a specific
-  // monster can attack while another combatant is current in init.
+  // ── Card-local combat state (ephemeral, resets on tab/mode change like the
+  // parent's OOT/collapse maps) ──
+  const [hp, setHp] = useState(monster.hp?.average ?? null);
+  const [dmgAmt, setDmgAmt] = useState('');
+  const [addCount, setAddCount] = useState(1);
+  const [ignoreReqs, setIgnoreReqs] = useState(false);
+  const [legUsed, setLegUsed] = useState(0);     // legendary actions spent this round
+  const [legResUsed, setLegResUsed] = useState(0); // legendary resistances spent
+  const maxHp = monster.hp?.average ?? null;
+
+  // `cmdName` is the acronymed combatant identifier ("ASD"/"ASD1"); the suffix
+  // only matters where the combatant NAME appears in a command (init-add, the
+  // !i offturn* family, !i hp). In-turn !i a/s/c use Avrae's current-combatant
+  // pointer. Avrae looks actions up by name on the loaded combatant, so we
+  // pass the action's display name, not the slug id.
   const onAction = (action) => fire({
     kind: 'attack',
     id: action.name,
@@ -261,6 +320,50 @@ function MonsterRollCard({
     outOfTurn,
     combatantName: cmdName,
   });
+
+  // Reactions are out-of-turn BY DEFINITION, so they force the offturn branch
+  // regardless of the card's OOT checkbox.
+  const onReaction = (action) => fire({
+    kind: 'attack',
+    id: action.name,
+    label: `${displayName} · ${action.name} (reaction)`,
+    initContext: true,
+    outOfTurn: true,
+    combatantName: cmdName,
+  });
+
+  const onSpell = (spell) => fire({
+    kind: 'spell',
+    id: spell.name,
+    label: `${displayName} · ${spell.name}${outOfTurn ? ' (OOT)' : ''}`,
+    initContext: true,
+    outOfTurn,
+    combatantName: cmdName,
+    ignoreReqs,
+  });
+
+  // Legendary action: fire the action AND tick the economy pip counter.
+  const onLegendary = (action) => {
+    onAction(action);
+    setLegUsed(u => Math.min(3, u + 1));
+  };
+
+  // HP via Avrae's !i hp <combatant> <±delta>. Local hp mirrors it for display.
+  const applyHp = (delta) => {
+    if (!cmdName || !delta) return;
+    const sign = delta > 0 ? `+${delta}` : `${delta}`;
+    emit(`${displayName} · ${delta < 0 ? 'damage' : 'heal'} ${Math.abs(delta)}`, `!i hp "${cmdName}" ${sign}`);
+    setHp(h => {
+      const base = (h ?? maxHp ?? 0) + delta;
+      return Math.max(0, maxHp != null ? Math.min(maxHp, base) : base);
+    });
+  };
+  const onDamage = () => { const n = parseInt(dmgAmt, 10); if (n > 0) { applyHp(-n); setDmgAmt(''); } };
+  const onHeal   = () => { const n = parseInt(dmgAmt, 10); if (n > 0) { applyHp(n);  setDmgAmt(''); } };
+  const onKill   = () => { if (cmdName) emit(`${displayName} · remove`, `!i remove "${cmdName}"`); };
+
+  // Recharge: roll 1d6 to see if the ability comes back.
+  const onRecharge = (action) => emit(`${displayName} · ${action.name} recharge`, '!r 1d6');
 
   return (
     <div className="border border-gold-strong bg-card rounded-sm overflow-hidden">
@@ -276,9 +379,14 @@ function MonsterRollCard({
             {collapsed ? '▶' : '▼'}
           </button>
           <div className="min-w-0">
-            <div className="font-display text-lg text-gold uppercase tracking-wider truncate">
+            <button
+              type="button"
+              onClick={onView}
+              title="view stat block"
+              className="font-display text-lg text-gold uppercase tracking-wider truncate hover:text-parchment transition text-left block max-w-full"
+            >
               {monster.name || '— unnamed —'}
-            </div>
+            </button>
             {summary && <div className="text-fade text-xs italic truncate">{summary}</div>}
           </div>
         </div>
@@ -324,43 +432,128 @@ function MonsterRollCard({
               className="sr-only"
             />
           </label>
-          <button
-            type="button"
-            onClick={onInitAdd}
-            title={cmdName && cmdName !== monster.name
-              ? `!i madd "${monster.name}" -name "${cmdName}"`
-              : `!i madd "${monster.name}"`}
-            className="text-xs font-cmd uppercase tracking-wider text-gold border border-gold px-2 py-1 hover:bg-card-hover transition"
-          >
-            ↻ init add
-          </button>
+          <div className="inline-flex items-center gap-1" title={
+            addCount > 1
+              ? `!i madd "${monster.name}" -n ${addCount} -name "${acro || cmdName}#" -rollhp`
+              : (cmdName && cmdName !== monster.name
+                  ? `!i madd "${monster.name}" -name "${cmdName}"`
+                  : `!i madd "${monster.name}"`)
+          }>
+            <select
+              className="lined"
+              value={addCount}
+              onChange={e => setAddCount(Number(e.target.value))}
+              title="how many copies to add (auto-numbered G1, G2, …)"
+            >
+              {[1, 2, 3, 4, 5, 6, 7, 8].map(n => <option key={n} value={n}>×{n}</option>)}
+            </select>
+            <button
+              type="button"
+              onClick={() => onInitAdd(addCount)}
+              className="text-xs font-cmd uppercase tracking-wider text-gold border border-gold px-2 py-1 hover:bg-card-hover transition"
+            >
+              ↻ init add
+            </button>
+          </div>
         </div>
       </div>
 
       {!collapsed && (
       <div className="px-4 py-3 space-y-4">
+        {maxHp != null && (
+          <div className="flex items-center gap-2 flex-wrap text-xs">
+            <span className="font-display text-gold uppercase tracking-wider">HP</span>
+            <span className="font-cmd text-parchment">{hp ?? maxHp}/{maxHp}</span>
+            <input
+              type="number" min="1"
+              value={dmgAmt}
+              onChange={e => setDmgAmt(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter') onDamage(); }}
+              placeholder="amt"
+              className="lined w-16 font-cmd"
+            />
+            <button type="button" onClick={onDamage} title={`!i hp "${cmdName}" -<amt>`}
+              className="font-cmd text-crimson border border-crimson rounded-sm px-2 py-0.5 hover:bg-active transition">− dmg</button>
+            <button type="button" onClick={onHeal} title={`!i hp "${cmdName}" +<amt>`}
+              className="font-cmd text-gold border border-gold rounded-sm px-2 py-0.5 hover:bg-active transition">+ heal</button>
+            <button type="button" onClick={onKill} title={`!i remove "${cmdName}"`}
+              className="font-cmd text-fade border border-gold rounded-sm px-2 py-0.5 hover:text-crimson transition ml-auto">💀 remove</button>
+          </div>
+        )}
+
         {actions.length > 0 && (
           <ButtonGroup label="Actions">
             {actions.map(a => (
               <ActionCard
                 key={a.id}
                 title={a.name}
+                tooltip={descTooltip(a.description)}
+                right={a.recharge != null ? (
+                  <button type="button" onClick={(e) => { e.stopPropagation(); onRecharge(a); }}
+                    title={`recharge — roll 1d6 (recharges on ${a.recharge >= 6 ? '6' : `${a.recharge}-6`})`}
+                    className="font-cmd text-[10px] text-gold border border-gold rounded-sm px-1 hover:bg-active">{rechargeLabel(a.recharge)}</button>
+                ) : null}
                 onClick={() => onAction(a)}
               />
             ))}
           </ButtonGroup>
         )}
 
-        {legendaryActions.length > 0 && (
-          <ButtonGroup label="Legendary Actions">
-            {legendaryActions.map(a => (
-              <ActionCard
-                key={a.id}
-                title={a.name}
-                onClick={() => onAction(a)}
-              />
+        {bonusActions.length > 0 && (
+          <ButtonGroup label="Bonus Actions">
+            {bonusActions.map(a => (
+              <ActionCard key={a.id} title={a.name} tooltip={descTooltip(a.description)} onClick={() => onAction(a)} />
             ))}
           </ButtonGroup>
+        )}
+
+        {reactions.length > 0 && (
+          <ButtonGroup label="Reactions · out of turn">
+            {reactions.map(a => (
+              <ActionCard key={a.id} title={a.name} tooltip={descTooltip(a.description)} onClick={() => onReaction(a)} />
+            ))}
+          </ButtonGroup>
+        )}
+
+        {spellcasting.length > 0 && (
+          <SpellcastingGroups
+            blocks={spellcasting}
+            ignoreReqs={ignoreReqs}
+            onToggleIgnoreReqs={() => setIgnoreReqs(v => !v)}
+            onSpell={onSpell}
+          />
+        )}
+
+        {legendaryActions.length > 0 && (
+          <div>
+            <div className="flex items-center justify-between mb-2 gap-2">
+              <h4 className="font-display text-gold uppercase tracking-wider text-xs">Legendary Actions</h4>
+              <div className="flex items-center gap-2">
+                <Pips used={legUsed} total={3} onSet={setLegUsed} />
+                <button type="button" onClick={() => setLegUsed(0)} className="text-[10px] font-cmd text-fade hover:text-gold uppercase tracking-wider">reset</button>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              {legendaryActions.map(a => (
+                <ActionCard
+                  key={a.id}
+                  title={a.name}
+                  tooltip={descTooltip(a.description)}
+                  right={a.recharge != null ? (
+                    <button type="button" onClick={(e) => { e.stopPropagation(); onRecharge(a); }}
+                      title="recharge — roll 1d6" className="font-cmd text-[10px] text-gold border border-gold rounded-sm px-1 hover:bg-active">{rechargeLabel(a.recharge)}</button>
+                  ) : null}
+                  onClick={() => onLegendary(a)}
+                />
+              ))}
+            </div>
+            {legResMax > 0 && (
+              <div className="flex items-center gap-2 mt-2 text-[11px]">
+                <span className="font-cmd text-fade uppercase tracking-wider">Legendary Resistance</span>
+                <Pips used={legResUsed} total={legResMax} onSet={setLegResUsed} />
+              </div>
+            )}
+          </div>
         )}
 
         {saveEntries.length > 0 && (
@@ -421,6 +614,71 @@ function ButtonGroup({ label, children }) {
       <div className="grid grid-cols-2 gap-2">
         {children}
       </div>
+    </div>
+  );
+}
+
+// Clickable pip row for tracking a limited economy (legendary actions per
+// round, legendary resistances per day). Filled = spent. Clicking pip i marks
+// i+1 spent; clicking the last-spent pip frees one back, so a misclick is
+// correctable. Ephemeral — purely a play aid, no command emitted.
+function Pips({ used, total, onSet }) {
+  return (
+    <span className="inline-flex gap-1 items-center">
+      {Array.from({ length: total }, (_, i) => {
+        const filled = i < used;
+        return (
+          <button
+            key={i}
+            type="button"
+            onClick={() => onSet(filled && i === used - 1 ? i : i + 1)}
+            title={filled ? 'spent — click to free one' : 'available — click to spend'}
+            className="w-2.5 h-2.5 rounded-full border flex-shrink-0"
+            style={{ borderColor: 'var(--color-gold)', backgroundColor: filled ? 'var(--color-gold)' : 'transparent' }}
+          />
+        );
+      })}
+    </span>
+  );
+}
+
+// Monster spellcasting blocks → button groups. Each spell fires !i cast; the
+// per-card "ignore reqs (-i)" toggle covers at-will / X-per-day innate casting
+// where Avrae's slot validation would otherwise refuse.
+function SpellcastingGroups({ blocks, ignoreReqs, onToggleIgnoreReqs, onSpell }) {
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-2 gap-2">
+        <h4 className="font-display text-gold uppercase tracking-wider text-xs">Spells</h4>
+        <label
+          className="inline-flex items-center gap-1.5 cursor-pointer text-[10px] font-cmd uppercase tracking-wider select-none"
+          title="append -i so Avrae ignores cast requirements — needed for a monster's at-will / X-per-day innate spells"
+        >
+          <span
+            className={`w-3 h-3 border rounded-sm inline-flex items-center justify-center text-[8px] ${ignoreReqs ? 'border-gold-strong' : 'border-gold'}`}
+            style={ignoreReqs ? { backgroundColor: 'var(--color-gold)', color: 'var(--color-bg)' } : {}}
+          >
+            {ignoreReqs && '✓'}
+          </span>
+          <span className={ignoreReqs ? 'text-gold' : 'text-fade'}>ignore reqs (-i)</span>
+          <input type="checkbox" checked={ignoreReqs} onChange={onToggleIgnoreReqs} className="sr-only" />
+        </label>
+      </div>
+      {blocks.map((block, bi) => (
+        <div key={bi} className="mb-2 last:mb-0">
+          {block.header && <div className="text-fade text-[11px] italic mb-1">{block.header}</div>}
+          <div className="grid grid-cols-2 gap-2">
+            {block.spells.map((sp, si) => (
+              <ActionCard
+                key={si}
+                title={sp.name}
+                right={sp.freq ? <span className="font-cmd text-fade text-[10px]">{sp.freq}</span> : null}
+                onClick={() => onSpell(sp)}
+              />
+            ))}
+          </div>
+        </div>
+      ))}
     </div>
   );
 }

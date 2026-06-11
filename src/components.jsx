@@ -40,13 +40,16 @@ export function Checkbox({ label, checked, onChange, compact }) {
   );
 }
 
-export function ActionCard({ title, sub, right, onClick }) {
+// `tooltip` (optional) becomes the DOM title — distinct from `title`, which is
+// the visible label. DM Roll passes the imported action description here so a
+// DM can read what "Fire Breath" does on hover without leaving the surface.
+export function ActionCard({ title, sub, right, onClick, tooltip, disabled }) {
   return (
-    <button onClick={onClick}
-      className="btn-action bg-card hover:bg-card-hover border border-gold rounded-sm p-3 text-left flex justify-between items-start gap-2 group">
+    <button onClick={onClick} title={tooltip || undefined} disabled={disabled}
+      className={`btn-action bg-card hover:bg-card-hover border border-gold rounded-sm p-3 text-left flex justify-between items-start gap-2 group ${disabled ? 'opacity-40' : ''}`}>
       <div className="min-w-0 flex-1">
         <div className="font-display text-base text-parchment group-hover:text-gold transition">{title}</div>
-        <div className="text-xs text-fade italic mt-0.5 truncate">{sub}</div>
+        {sub && <div className="text-xs text-fade italic mt-0.5 truncate">{sub}</div>}
       </div>
       {right && <div className="flex-shrink-0">{right}</div>}
     </button>

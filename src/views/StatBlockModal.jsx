@@ -100,7 +100,9 @@ export default function StatBlockModal({ monster, setMonster, onClose }) {
   const hasAnyData =
     !!identity || monster.ac != null || monster.hp?.average != null ||
     !!monster.speed || !!monster.cr || (monster.traits?.length || 0) > 0 ||
-    (monster.actions?.length || 0) > 0 || (monster.legendaryActions?.length || 0) > 0;
+    (monster.actions?.length || 0) > 0 || (monster.legendaryActions?.length || 0) > 0 ||
+    (monster.bonusActions?.length || 0) > 0 || (monster.reactions?.length || 0) > 0 ||
+    (monster.spellcasting?.length || 0) > 0 || !!monster.resist || !!monster.immune;
 
   return (
     <div
@@ -258,14 +260,48 @@ function ReadView({ monster, identity, savesLine, skillsLine, sensesLine }) {
         {monster.languages && (
           <div><Label>Languages</Label> <span className="text-parchment">{monster.languages}</span></div>
         )}
+        {monster.resist && (
+          <div><Label>Damage Resistances</Label> <span className="text-parchment">{monster.resist}</span></div>
+        )}
+        {monster.immune && (
+          <div><Label>Damage Immunities</Label> <span className="text-parchment">{monster.immune}</span></div>
+        )}
+        {monster.vulnerable && (
+          <div><Label>Damage Vulnerabilities</Label> <span className="text-parchment">{monster.vulnerable}</span></div>
+        )}
+        {monster.conditionImmune && (
+          <div><Label>Condition Immunities</Label> <span className="text-parchment">{monster.conditionImmune}</span></div>
+        )}
         {monster.cr && (
           <div><Label>Challenge</Label> <span className="text-parchment">{monster.cr}</span></div>
         )}
       </div>
 
       <ReadEntries title="Traits"            items={monster.traits} />
+      <ReadSpellcasting blocks={monster.spellcasting} />
       <ReadEntries title="Actions"           items={monster.actions} />
+      <ReadEntries title="Bonus Actions"     items={monster.bonusActions} />
+      <ReadEntries title="Reactions"         items={monster.reactions} />
       <ReadEntries title="Legendary Actions" items={monster.legendaryActions} />
+    </div>
+  );
+}
+
+function ReadSpellcasting({ blocks }) {
+  if (!Array.isArray(blocks) || blocks.length === 0) return null;
+  return (
+    <div className="mt-4">
+      <h3 className="font-display text-gold uppercase tracking-wider text-sm border-b border-gold pb-1 mb-2">Spellcasting</h3>
+      {blocks.map((b, i) => (
+        <div key={i} className="mb-2">
+          {b.header && <p className="text-parchment text-sm mb-1 leading-relaxed">{b.header}</p>}
+          {Array.isArray(b.spells) && b.spells.length > 0 && (
+            <p className="text-fade text-sm italic">
+              {b.spells.map(s => s.freq ? `${s.name} (${s.freq})` : s.name).join(', ')}
+            </p>
+          )}
+        </div>
+      ))}
     </div>
   );
 }
@@ -354,6 +390,15 @@ function EditView({ monster, setMonster, patch, patchHp, patchAbilities, patchSa
         </div>
       </Section>
 
+      <Section title="Defenses">
+        <div className="grid grid-cols-2 gap-2">
+          <Field label="Damage Resistances"     value={monster.resist}          onChange={v => patch({ resist: v })}          placeholder="cold, fire" />
+          <Field label="Damage Immunities"      value={monster.immune}          onChange={v => patch({ immune: v })}          placeholder="poison" />
+          <Field label="Damage Vulnerabilities" value={monster.vulnerable}      onChange={v => patch({ vulnerable: v })}      placeholder="radiant" />
+          <Field label="Condition Immunities"   value={monster.conditionImmune} onChange={v => patch({ conditionImmune: v })} placeholder="charmed, frightened" />
+        </div>
+      </Section>
+
       <EntriesEditor
         title="Traits"
         items={monster.traits || []}
@@ -363,6 +408,16 @@ function EditView({ monster, setMonster, patch, patchHp, patchAbilities, patchSa
         title="Actions"
         items={monster.actions || []}
         onChange={(items) => setMonster(cur => ({ ...cur, actions: items }))}
+      />
+      <EntriesEditor
+        title="Bonus Actions"
+        items={monster.bonusActions || []}
+        onChange={(items) => setMonster(cur => ({ ...cur, bonusActions: items }))}
+      />
+      <EntriesEditor
+        title="Reactions"
+        items={monster.reactions || []}
+        onChange={(items) => setMonster(cur => ({ ...cur, reactions: items }))}
       />
       <EntriesEditor
         title="Legendary Actions"
