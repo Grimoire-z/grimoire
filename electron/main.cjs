@@ -9,6 +9,26 @@ const isDev = !app.isPackaged;
 const DEV_URL = process.env.VITE_DEV_SERVER_URL || 'http://localhost:5173';
 const REPO = 'Grimoire-z/grimoire';
 
+// Only http(s) URLs are safe to hand to the OS shell. A file:// or custom-
+// scheme string handed to shell.openExternal can make Windows execute things;
+// the renderer is trusted, but this is a cheap belt-and-suspenders guard used
+// by every place we open or are asked to open an external URL.
+function isWebUrl(url) {
+  try {
+    return /^https?:$/.test(new URL(url).protocol);
+  } catch {
+    return false;
+  }
+}
+
+// Popups/target=_blank from any embedded web content (the main window, and
+// the DDB refresh window) open in the user's real browser, never as a
+// chromeless Electron child. Shared by both windows' setWindowOpenHandler.
+function externalOpenHandler({ url }) {
+  if (isWebUrl(url)) shell.openExternal(url);
+  return { action: 'deny' };
+}
+
 function createWindow() {
   const win = new BrowserWindow({
     width: 1400,
@@ -26,10 +46,7 @@ function createWindow() {
     },
   });
 
-  win.webContents.setWindowOpenHandler(({ url }) => {
-    shell.openExternal(url);
-    return { action: 'deny' };
-  });
+  win.webContents.setWindowOpenHandler(externalOpenHandler);
 
   if (isDev) {
     win.loadURL(DEV_URL);
@@ -78,17 +95,39 @@ async function getGhToken() {
   }
 }
 
-function httpsGet(url, headers) {
+const HTTP_TIMEOUT_MS = 30000;
+
+function httpsGet(url, headers, redirectsLeft = 5) {
   return new Promise((resolve, reject) => {
-    https.get(url, { headers }, (res) => {
+    const req = https.get(url, { headers }, (res) => {
       if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
-        // Follow redirect
-        httpsGet(res.headers.location, headers).then(resolve, reject);
+        if (redirectsLeft <= 0) {
+          res.resume();
+          reject(new Error('too many redirects'));
+          return;
+        }
+        // location can be relative; resolve it against the current URL. Drop
+        // the Authorization header when the redirect leaves the original host:
+        // GitHub bounces asset downloads to a signed objects.githubusercontent
+        // .com / S3 URL where forwarding the bearer token is unnecessary and
+        // has historically produced 400s ("only one auth mechanism allowed").
+        const nextUrl = new URL(res.headers.location, url).toString();
+        const sameHost = new URL(nextUrl).host === new URL(url).host;
+        const nextHeaders = { ...headers };
+        if (!sameHost) delete nextHeaders.Authorization;
         res.resume();
+        httpsGet(nextUrl, nextHeaders, redirectsLeft - 1).then(resolve, reject);
         return;
       }
       resolve(res);
-    }).on('error', reject);
+    });
+    req.on('error', reject);
+    // Guard against a stalled connection leaving the renderer stuck forever
+    // at "checking…" / "downloading" — there's no other escape from the IPC
+    // await on the SettingsView side.
+    req.setTimeout(HTTP_TIMEOUT_MS, () => {
+      req.destroy(new Error(`request timed out after ${HTTP_TIMEOUT_MS}ms`));
+    });
   });
 }
 
@@ -182,7 +221,11 @@ ipcMain.handle('download-and-install', async (event, asset) => {
   try {
     if (!asset?.url) throw new Error('no asset to download');
     const token = await getGhToken();
-    const tmpFile = path.join(os.tmpdir(), `grimoire-update-${Date.now()}.exe`);
+    // Fixed filename so each download overwrites the previous one instead of
+    // accumulating ~80-100MB installers in %TEMP% (Windows never auto-cleans
+    // it). We can't delete after launch — NSIS is still reading the file — so
+    // overwrite-next-time is the bound.
+    const tmpFile = path.join(os.tmpdir(), 'grimoire-update.exe');
     const win = BrowserWindow.fromWebContents(event.sender);
     await downloadAsset(asset.url, token, tmpFile, (received, total) => {
       win?.webContents.send('update-download-progress', { received, total });
@@ -199,6 +242,7 @@ ipcMain.handle('download-and-install', async (event, asset) => {
 });
 
 ipcMain.handle('open-external', async (_event, url) => {
+  if (!isWebUrl(url)) return { ok: false, error: 'refused to open non-http(s) URL' };
   await shell.openExternal(url);
   return { ok: true };
 });
@@ -560,6 +604,9 @@ ipcMain.handle('refresh-character-from-ddb', async (event, characterUrl) => {
   if (!/(^|\.)dndbeyond\.com$/i.test(parsedUrl.host)) {
     throw new Error(`expected a dndbeyond.com URL, got "${parsedUrl.host}"`);
   }
+  if (parsedUrl.protocol !== 'https:') {
+    throw new Error('D&D Beyond URL must use https.');
+  }
 
   if (activeDdbRefreshWin && !activeDdbRefreshWin.isDestroyed()) {
     activeDdbRefreshWin.focus();
@@ -585,6 +632,12 @@ ipcMain.handle('refresh-character-from-ddb', async (event, characterUrl) => {
       },
     });
     activeDdbRefreshWin = win;
+
+    // DDB pages carry ads/marketing links; without this a target=_blank
+    // would spawn an orphan chromeless Electron window on the persist:ddb
+    // session (no URL bar, indistinguishable from the app, not auto-closed
+    // by the refresh flow). Route them to the real browser instead.
+    win.webContents.setWindowOpenHandler(externalOpenHandler);
 
     let captured = false;
     const filter = { urls: ['*://character-service.dndbeyond.com/character/v*/pdf*'] };

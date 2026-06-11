@@ -12,8 +12,9 @@
     "preview": "vite preview",
     "electron": "electron .",
     "electron:dev": "concurrently -k -n vite,electron -c blue,magenta \"vite\" \"wait-on http://localhost:5173 && cross-env NODE_ENV=development electron .\"",
-    "dist": "vite build && electron-builder",
-    "dist:dir": "vite build && electron-builder --dir"
+    "dist": "npm run clean && vite build && electron-builder",
+    "dist:dir": "npm run clean && vite build && electron-builder --dir",
+    "clean": "node -e \"require('fs').rmSync('release',{recursive:true,force:true})\""
   },
   "build": {
     "appId": "com.mpk11.grimoire",
@@ -48,13 +49,15 @@
       "perMachine": false
     }
   },
-  "dependencies": {
-    "pdfjs-dist": "^5.7.284",
-    "react": "^19.2.5",
-    "react-dom": "^19.2.5"
-  },
+  "comment:dependencies": "react/react-dom/pdfjs-dist are devDependencies on purpose: Vite bundles them into dist/ at build time, and electron/main.cjs + preload.cjs require none of them at runtime. Keeping them out of `dependencies` stops electron-builder from packing their ~78MB node_modules trees (incl. pdfjs's @napi-rs/canvas skia binary) into app.asar beside the already-bundled dist/.",
   "devDependencies": {
     "@eslint/js": "^10.0.1",
+    "@fontsource/cinzel": "^5.2.8",
+    "@fontsource/crimson-pro": "^5.2.8",
+    "@fontsource/im-fell-english": "^5.2.6",
+    "@fontsource/im-fell-english-sc": "^5.2.6",
+    "@fontsource/inter": "^5.2.8",
+    "@fontsource/jetbrains-mono": "^5.2.8",
     "@tailwindcss/vite": "^4.2.4",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
@@ -67,6 +70,9 @@
     "eslint-plugin-react-hooks": "^7.1.1",
     "eslint-plugin-react-refresh": "^0.5.2",
     "globals": "^17.5.0",
+    "pdfjs-dist": "^5.7.284",
+    "react": "^19.2.5",
+    "react-dom": "^19.2.5",
     "tailwindcss": "^4.2.4",
     "vite": "^8.0.10",
     "wait-on": "^9.0.5"
