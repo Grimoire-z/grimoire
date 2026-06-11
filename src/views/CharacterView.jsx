@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react';
-import { SAVE_DEFS, SKILL_DEFS, applyCharacterPatch } from '../state.js';
+import { SAVE_DEFS, SKILL_DEFS, applyCharacterPatch, makeId } from '../state.js';
 import { Checkbox, FieldLabel, SectionCard, PortraitDisplay, fileToPortraitDataUrl } from '../components.jsx';
 import { importDdbPdfFile } from '../ddbPdfImport.js';
 import { importDdbJsonFile, parseDdbJson, DDB_BOOKMARKLET } from '../ddbJsonImport.js';
@@ -312,7 +312,10 @@ function Attacks({ character, setCharacter }) {
   const add = () =>
     setCharacter(c => ({
       ...c,
-      attacks: [...c.attacks, { id: '', name: '', sub: '' }],
+      // _key is a stable React identity for the editor row, separate from the
+      // user-editable (often blank/duplicated) `id`. Rows imported or created
+      // before this field existed fall back to array index — see key= below.
+      attacks: [...c.attacks, { id: '', name: '', sub: '', _key: makeId() }],
     }));
   const remove = (i) =>
     setCharacter(c => ({ ...c, attacks: c.attacks.filter((_, idx) => idx !== i) }));
@@ -325,7 +328,7 @@ function Attacks({ character, setCharacter }) {
       )}
       <div className="space-y-2">
         {character.attacks.map((a, i) => (
-          <div key={i} className="bg-grimoire border border-gold rounded-sm px-2 py-1.5 space-y-1.5">
+          <div key={a._key ?? i} className="bg-grimoire border border-gold rounded-sm px-2 py-1.5 space-y-1.5">
             <div className="grid grid-cols-12 gap-2 items-center">
               <input className="lined col-span-4 font-cmd" placeholder="id (Avrae name)"
                      value={a.id}

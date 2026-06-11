@@ -1,5 +1,27 @@
 // Avrae command composer — turns an action + active modifiers into a !command string.
 
+// Wrap a value as a double-quoted Avrae arg. Avrae's argument tokenizer
+// doesn't reliably honor backslash-escaped quotes, so rather than risk a
+// structurally-broken command we swap any embedded straight double quote for
+// a typographic one (U+201D), which is visually near-identical and is NOT a
+// tokenizer delimiter. Names/phrases containing a literal " are vanishingly
+// rare; the app's display text keeps the real character, only the emitted
+// command is sanitized.
+export function quoted(s) {
+  return `"${String(s ?? '').replace(/"/g, '”')}"`;
+}
+
+// save/check ability/skill ids are normally single tokens (SAVE_DEFS /
+// SKILL_DEFS: 'str', 'sleightOfHand'), emitted bare. But DM-mode monster
+// skills imported from 5e.tools can be spaced ("sleight of hand"), which
+// bare would split into multiple args and rely on Avrae's fuzzy matcher.
+// Quote only when whitespace is present so the common single-word case is
+// byte-for-byte unchanged.
+function abilityArg(id) {
+  const s = String(id ?? '');
+  return /\s/.test(s) ? quoted(s) : s;
+}
+
 export function substituteParams(template, params, selections) {
   if (!template) return template || '';
   let out = template;
@@ -16,17 +38,17 @@ export function composeFromMod(mod, paramSelections) {
   const out  = [];
   for (const eff of mod.effects) {
     if      (eff.type === 'bonus')  out.push(`-b ${sub(eff.value)}`);
-    else if (eff.type === 'damage') out.push(`-d "${sub(eff.value)}"`);
-    else if (eff.type === 'crit')   out.push(`-c "${sub(eff.value)}"`);
+    else if (eff.type === 'damage') out.push(`-d ${quoted(sub(eff.value))}`);
+    else if (eff.type === 'crit')   out.push(`-c ${quoted(sub(eff.value))}`);
     else if (eff.type === 'adv')    out.push('adv');
     else if (eff.type === 'dis')    out.push('dis');
     else if (eff.type === 'ro')     out.push(`-ro ${sub(eff.value)}`);
     else if (eff.type === 'rr')     out.push(`-rr ${sub(eff.value)}`);
     else if (eff.type === 'mi')     out.push(`-mi ${sub(eff.value)}`);
     else if (eff.type === 'max')    out.push('-max');
-    else if (eff.type === 'dtype')  out.push(`-dtype "${sub(eff.value)}"`);
+    else if (eff.type === 'dtype')  out.push(`-dtype ${quoted(sub(eff.value))}`);
     else if (eff.type === 'hide')   out.push('-h');
-    else if (eff.type === 'phrase') out.push(`-phrase "${sub(eff.value)}"`);
+    else if (eff.type === 'phrase') out.push(`-phrase ${quoted(sub(eff.value))}`);
     else if (eff.type === 'raw')    out.push(sub(eff.value));
   }
   return out.join(' ');
@@ -50,21 +72,21 @@ export function compose({ action, activeMods, modParams, modifiers, custom }) {
   const ot     = action.combatantName;
   let cmd;
   if (action.kind === 'attack') {
-    cmd = offturn ? `!i offturnattack "${ot}" "${action.id}"`
-        : init    ? `!i a "${action.id}"`
-                  : `!attack "${action.id}"`;
+    cmd = offturn ? `!i offturnattack ${quoted(ot)} ${quoted(action.id)}`
+        : init    ? `!i a ${quoted(action.id)}`
+                  : `!attack ${quoted(action.id)}`;
   } else if (action.kind === 'spell') {
-    cmd = offturn ? `!i offturncast "${ot}" "${action.id}"`
-        : init    ? `!i cast "${action.id}"`
-                  : `!cast "${action.id}"`;
+    cmd = offturn ? `!i offturncast ${quoted(ot)} ${quoted(action.id)}`
+        : init    ? `!i cast ${quoted(action.id)}`
+                  : `!cast ${quoted(action.id)}`;
   } else if (action.kind === 'save') {
-    cmd = offturn ? `!i offturnsave "${ot}" ${action.id}`
-        : init    ? `!i s ${action.id}`
-                  : `!save ${action.id}`;
+    cmd = offturn ? `!i offturnsave ${quoted(ot)} ${abilityArg(action.id)}`
+        : init    ? `!i s ${abilityArg(action.id)}`
+                  : `!save ${abilityArg(action.id)}`;
   } else {
-    cmd = offturn ? `!i offturncheck "${ot}" ${action.id}`
-        : init    ? `!i c ${action.id}`
-                  : `!check ${action.id}`;
+    cmd = offturn ? `!i offturncheck ${quoted(ot)} ${abilityArg(action.id)}`
+        : init    ? `!i c ${abilityArg(action.id)}`
+                  : `!check ${abilityArg(action.id)}`;
   }
 
   const argParts = [];
@@ -74,7 +96,7 @@ export function compose({ action, activeMods, modParams, modifiers, custom }) {
   // Avrae targets: -t "<name>" repeated per target, only on attacks/spells.
   if ((action.kind === 'attack' || action.kind === 'spell') && action.targets?.length) {
     for (const t of action.targets) {
-      argParts.push(`-t "${t}"`);
+      argParts.push(`-t ${quoted(t)}`);
     }
   }
   for (const modId of activeMods) {
@@ -90,11 +112,11 @@ export function compose({ action, activeMods, modParams, modifiers, custom }) {
   }
   if (custom.bonus.trim())  argParts.push(`-b ${custom.bonus.trim()}`);
   if (custom.damage.trim() && (action.kind === 'attack' || action.kind === 'spell'))
-    argParts.push(`-d "${custom.damage.trim()}"`);
+    argParts.push(`-d ${quoted(custom.damage.trim())}`);
 
   // Per-action flavor phrase, applied last so it shows up in the result text.
   if (action.phrase && action.phrase.trim()) {
-    argParts.push(`-phrase "${action.phrase.trim()}"`);
+    argParts.push(`-phrase ${quoted(action.phrase.trim())}`);
   }
 
   return argParts.length ? `${cmd} ${argParts.join(' ')}` : cmd;

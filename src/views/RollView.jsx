@@ -354,7 +354,14 @@ function SpellsPane({ character, spellsByLevel, populatedSpellLevels, spellLevel
   // it sits in). Dropdown options run from that native level up to L9,
   // so Fireball (L3) shows L3-L9, Magic Missile (L1) shows L1-L9, etc.
   // Cantrips don't upcast — no dropdown is rendered for them.
-  const castAtFor = (spell) => castLevel[spell.id] ?? activeLevel;
+  //
+  // The castLevel map is keyed by `${level}:${id}`, NOT bare id: DDB only
+  // dedups spell ids within a level, so the same id can appear at two
+  // levels (Invisibility at L2 and an upcast-prepared copy at L4). A bare
+  // id would share one slot between them, leaving one dropdown showing a
+  // value outside its own option range and firing the wrong upcastTo.
+  const castKey  = (spell) => `${activeLevel}:${spell.id}`;
+  const castAtFor = (spell) => castLevel[castKey(spell)] ?? activeLevel;
 
   return (
     <div>
@@ -387,7 +394,7 @@ function SpellsPane({ character, spellsByLevel, populatedSpellLevels, spellLevel
                   onClick={e => e.stopPropagation()}
                   className="lined flex-shrink-0 text-[10px]"
                   value={upcastTo}
-                  onChange={e => setCastLevel(p => ({ ...p, [s.id]: Number(e.target.value) }))}
+                  onChange={e => setCastLevel(p => ({ ...p, [castKey(s)]: Number(e.target.value) }))}
                   title="cast at level"
                 >
                   {Array.from({ length: 10 - activeLevel }, (_, i) => activeLevel + i).map(n => (

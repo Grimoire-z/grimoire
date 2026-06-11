@@ -11,7 +11,7 @@
 
 import { useMemo, useState } from 'react';
 import { composeFromMod } from '../composer.js';
-import { APPLIES_KINDS, EFFECT_LABELS, EFFECT_PLACEHOLDERS, EFFECT_HAS_VALUE, EFFECT_DESCRIPTIONS, EFFECT_NO_VALUE_BLURB, makeShortId } from '../state.js';
+import { APPLIES_KINDS, EFFECT_LABELS, EFFECT_PLACEHOLDERS, EFFECT_HAS_VALUE, EFFECT_DESCRIPTIONS, EFFECT_NO_VALUE_BLURB, makeShortId, makeId } from '../state.js';
 import { Checkbox } from '../components.jsx';
 
 export default function ModifierForgeView({
@@ -215,7 +215,10 @@ function ModifierEditor({ mod, scope, allMods, update, onToggleScope, onDelete, 
   };
 
   const addEffect = (type) => {
-    const eff = EFFECT_HAS_VALUE(type) ? { type, value: '' } : { type };
+    // _key gives the editor row a stable React identity across re-orders and
+    // deletions (the effect has no natural id). Pre-existing persisted effects
+    // lack it and fall back to array index — see EffectRow key= below.
+    const eff = EFFECT_HAS_VALUE(type) ? { type, value: '', _key: makeId() } : { type, _key: makeId() };
     update({ effects: [...mod.effects, eff] });
   };
   const updateEffect = (i, patch) => {
@@ -230,7 +233,8 @@ function ModifierEditor({ mod, scope, allMods, update, onToggleScope, onDelete, 
     const id = `p${mod.params.length + 1}`;
     update({ params: [...mod.params, {
       id, label: 'Lvl', defaultIndex: 0,
-      options: [{ label: 'Option 1', value: '' }],
+      options: [{ label: 'Option 1', value: '', _key: makeId() }],
+      _key: makeId(),
     }] });
   };
   const updateParam = (i, patch) => {
@@ -311,7 +315,7 @@ function ModifierEditor({ mod, scope, allMods, update, onToggleScope, onDelete, 
 
         <div className="space-y-2">
           {mod.effects.map((eff, i) => (
-            <EffectRow key={i} effect={eff}
+            <EffectRow key={eff._key ?? i} effect={eff}
               onChange={patch => updateEffect(i, patch)}
               onDelete={() => deleteEffect(i)} />
           ))}
@@ -345,7 +349,7 @@ function ModifierEditor({ mod, scope, allMods, update, onToggleScope, onDelete, 
         ) : (
           <div className="space-y-3">
             {mod.params.map((p, i) => (
-              <ParameterEditor key={i} param={p}
+              <ParameterEditor key={p._key ?? i} param={p}
                 onChange={patch => updateParam(i, patch)}
                 onDelete={() => deleteParam(i)} />
             ))}
@@ -400,7 +404,7 @@ function ParameterEditor({ param, onChange, onDelete }) {
     onChange({ options: next });
   };
   const addOption = () => {
-    onChange({ options: [...param.options, { label: '', value: '' }] });
+    onChange({ options: [...param.options, { label: '', value: '', _key: makeId() }] });
   };
   const removeOption = (i) => {
     const next = param.options.filter((_, idx) => idx !== i);
@@ -436,7 +440,7 @@ function ParameterEditor({ param, onChange, onDelete }) {
       </div>
       <div className="space-y-1.5">
         {param.options.map((opt, i) => (
-          <div key={i} className="flex gap-2 items-center text-sm">
+          <div key={opt._key ?? i} className="flex gap-2 items-center text-sm">
             <button onClick={() => onChange({ defaultIndex: i })}
               className={`w-4 h-4 rounded-full border flex items-center justify-center flex-shrink-0 transition ${
                 param.defaultIndex === i ? 'border-gold-strong' : 'border-gold'

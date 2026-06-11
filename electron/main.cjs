@@ -238,18 +238,23 @@ function parseFiveEtoolsUrl(url) {
   return { name, source };
 }
 
-// Try several mirrors in sequence. 5e.tools itself sits behind Cloudflare
-// and 403s requests without browser-like headers (anti-hotlink). The
-// public 5etools-mirror-* GitHub Pages sites don't gate access and are the
-// canonical fallback. Some less-common sources (homebrew supplements,
-// recent releases) only live on a subset of mirrors, so we try each and
-// return the first that responds with JSON.
+// 5e.tools sits behind Cloudflare and 403s requests without browser-like
+// headers; Electron's net.fetch (Chromium stack) passes the bot check where
+// Node's undici fetch can't (see below). The public GitHub-Pages mirrors used
+// to be the no-Cloudflare fallback, but as of the v0.10 audit all three
+// 5etools-mirror-{1,2,3}.github.io hosts return 404 (the mirror org
+// reorganized), so they're dropped rather than kept as misleading dead weight
+// that just slows failures down. When the main host is unreachable, the
+// JSON-paste import path in the Add-monster picker is the real workaround.
 const BESTIARY_HOSTS = [
   'https://5e.tools/data/bestiary',
-  'https://5etools-mirror-3.github.io/data/bestiary',
-  'https://5etools-mirror-2.github.io/data/bestiary',
-  'https://5etools-mirror-1.github.io/data/bestiary',
 ];
+
+// Per-request ceiling so a host that accepts the connection but stalls (the
+// classic Cloudflare-doesn't-like-you failure) can't hang the import on
+// Chromium's multi-minute internal timeout — it becomes a normal failure
+// entry and the loop moves on.
+const BESTIARY_FETCH_TIMEOUT_MS = 10000;
 
 const BROWSERY_HEADERS = {
   'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36',
@@ -271,18 +276,21 @@ async function fetchBestiary(source) {
     const url = `${host}/${filename}`;
     try {
       console.log('[grimoire] 5etools fetch try:', url);
-      const res = await net.fetch(url, { headers: BROWSERY_HEADERS });
+      const res = await net.fetch(url, {
+        headers: BROWSERY_HEADERS,
+        signal: AbortSignal.timeout(BESTIARY_FETCH_TIMEOUT_MS),
+      });
       if (res.ok) {
         console.log('[grimoire] 5etools fetch ok:', url);
         return await res.json();
       }
       failures.push(`${url} → ${res.status} ${res.statusText}`);
     } catch (e) {
-      failures.push(`${url} → ${e.message}`);
+      failures.push(`${url} → ${e.name === 'TimeoutError' ? `timed out after ${BESTIARY_FETCH_TIMEOUT_MS}ms` : e.message}`);
     }
   }
   throw new Error(
-    `could not fetch ${filename} from any 5e.tools mirror — source "${source}" may not exist on the mirrors that have it open, or all hosts are down right now.\n\n${failures.join('\n')}`
+    `Could not fetch ${filename} from 5e.tools (source "${source}"). The site may be blocking the request or be temporarily down. As a fallback, use "Import from JSON" in the Add-monster picker — open the monster on 5e.tools and paste its JSON directly.\n\n${failures.join('\n')}`
   );
 }
 
@@ -534,6 +542,14 @@ ipcMain.handle('import-monster-from-json', async (_event, jsonText) => {
 // closes the window without clicking DDB's Print/Download. Either way,
 // the renderer is responsible for parsing the body via parseDdbJson.
 
+// Single in-flight DDB refresh. The capture listener registers on the shared
+// persist:ddb session as a replace-style single slot, so a second concurrent
+// refresh would clobber the first's listener and could resolve the wrong
+// character's exportData into the wrong character (silent overwrite), or
+// detach a live listener and leave a window that captures nothing. Tracking
+// the open window lets a second invoke focus the existing one and bail.
+let activeDdbRefreshWin = null;
+
 ipcMain.handle('refresh-character-from-ddb', async (event, characterUrl) => {
   let parsedUrl;
   try {
@@ -543,6 +559,11 @@ ipcMain.handle('refresh-character-from-ddb', async (event, characterUrl) => {
   }
   if (!/(^|\.)dndbeyond\.com$/i.test(parsedUrl.host)) {
     throw new Error(`expected a dndbeyond.com URL, got "${parsedUrl.host}"`);
+  }
+
+  if (activeDdbRefreshWin && !activeDdbRefreshWin.isDestroyed()) {
+    activeDdbRefreshWin.focus();
+    throw new Error('A D&D Beyond refresh is already open — finish or close that window first.');
   }
 
   return new Promise((resolve, reject) => {
@@ -563,6 +584,7 @@ ipcMain.handle('refresh-character-from-ddb', async (event, characterUrl) => {
         contextIsolation: true,
       },
     });
+    activeDdbRefreshWin = win;
 
     let captured = false;
     const filter = { urls: ['*://character-service.dndbeyond.com/character/v*/pdf*'] };
@@ -596,6 +618,7 @@ ipcMain.handle('refresh-character-from-ddb', async (event, characterUrl) => {
 
     win.on('closed', () => {
       try { ddbSession.webRequest.onBeforeRequest(filter, null); } catch {}
+      if (activeDdbRefreshWin === win) activeDdbRefreshWin = null;
       if (!captured) resolve({ cancelled: true });
     });
 
