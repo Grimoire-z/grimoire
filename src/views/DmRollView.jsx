@@ -62,7 +62,7 @@ const SKILL_LABELS = {
 
 export default function DmRollView({
   monsters, modifiers,
-  targets, folders, selectedTargets, setSelectedTargets,
+  targets, folders, setFolders, selectedTargets, setSelectedTargets,
   activeMods, setActiveMods, modParams, setModParams,
   custom, setCustom,
   composed, setComposed, history, setHistory, copied, setCopied,
@@ -219,7 +219,7 @@ export default function DmRollView({
           modifiers={modifiers}
           activeMods={activeMods} setActiveMods={setActiveMods}
           modParams={modParams} setModParams={setModParams}
-          targets={targets} folders={folders}
+          targets={targets} folders={folders} setFolders={setFolders}
           selectedTargets={selectedTargets} setSelectedTargets={setSelectedTargets}
           actionAccepts={true}
           custom={custom} setCustom={setCustom}

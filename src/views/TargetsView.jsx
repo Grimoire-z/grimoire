@@ -1,5 +1,4 @@
 import { useEffect, useState } from 'react';
-import { SectionCard } from '../components.jsx';
 
 export default function TargetsView({ targets, setTargets, folders, setFolders }) {
   const [importing, setImporting] = useState(false);
@@ -17,6 +16,21 @@ export default function TargetsView({ targets, setTargets, folders, setFolders }
     if (!window.confirm(`Delete folder "${folder.name}"?\n\nTargets inside will move to Ungrouped.`)) return;
     setFolders(prev => prev.filter(f => f.id !== id));
     setTargets(prev => prev.map(t => t.folderId === id ? { ...t, folderId: undefined } : t));
+  };
+  // Drag-and-drop reorder. Drop-target's index becomes the new home
+  // for the dragged folder; everything between shifts by one in the
+  // appropriate direction. Same array-splice trick the v0.8 vault
+  // would use if we ever surface drag-reorder there too.
+  const reorderFolder = (fromIndex, toIndex) => {
+    if (fromIndex === toIndex) return;
+    setFolders(prev => {
+      if (fromIndex < 0 || fromIndex >= prev.length) return prev;
+      if (toIndex < 0   || toIndex >= prev.length)   return prev;
+      const next = [...prev];
+      const [moved] = next.splice(fromIndex, 1);
+      next.splice(toIndex, 0, moved);
+      return next;
+    });
   };
 
   const addTarget = (folderId) => {
@@ -89,10 +103,11 @@ export default function TargetsView({ targets, setTargets, folders, setFolders }
       </div>
       <div className="divider" />
 
-      {folders.map(f => (
+      {folders.map((f, i) => (
         <FolderCard
           key={f.id}
           folder={f}
+          index={i}
           targets={targetsInFolder(f.id)}
           allFolders={folders}
           onRename={(name) => renameFolder(f.id, name)}
@@ -101,6 +116,7 @@ export default function TargetsView({ targets, setTargets, folders, setFolders }
           onRenameTarget={renameTarget}
           onRemoveTarget={removeTarget}
           onMoveTarget={moveTarget}
+          onReorder={reorderFolder}
         />
       ))}
 
@@ -322,17 +338,95 @@ function numberDuplicates(names) {
   });
 }
 
-function FolderCard({ folder, targets, allFolders, onRename, onDelete, onAddTarget, onRenameTarget, onRemoveTarget, onMoveTarget }) {
+function FolderCard({ folder, index, targets, allFolders, onRename, onDelete, onAddTarget, onRenameTarget, onRemoveTarget, onMoveTarget, onReorder }) {
+  // Drag-state lives locally per card. `dragging` fades the source
+  // while it's mid-drag; `dragOver` highlights the drop target.
+  const [dragging, setDragging] = useState(false);
+  const [dragOver, setDragOver] = useState(false);
+  // Collapse toggle is also local — defaults to expanded so existing
+  // workflows are unchanged. Clicking + add target auto-expands so
+  // the user can see the new row they're about to fill in.
+  const [collapsed, setCollapsed] = useState(false);
+
+  const onAddTargetExpand = () => {
+    setCollapsed(false);
+    onAddTarget();
+  };
+
+  const onDragStart = (e) => {
+    // Use the integer index as the dataTransfer payload. The card the
+    // drop lands on reads it to know where to insert.
+    e.dataTransfer.setData('application/grimoire-folder-index', String(index));
+    e.dataTransfer.setData('text/plain', String(index)); // fallback for browsers that ignore custom types
+    e.dataTransfer.effectAllowed = 'move';
+    setDragging(true);
+  };
+  const onDragEnd = () => {
+    setDragging(false);
+    setDragOver(false);
+  };
+  const onDragOver = (e) => {
+    // Only react to drags whose payload looks like ours — text drags
+    // out of the rename inputs shouldn't trigger drop-target styling.
+    if (![...e.dataTransfer.types].includes('application/grimoire-folder-index')) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    setDragOver(true);
+  };
+  const onDragLeave = () => setDragOver(false);
+  const onDrop = (e) => {
+    setDragOver(false);
+    const raw = e.dataTransfer.getData('application/grimoire-folder-index');
+    if (raw === '') return;
+    const from = parseInt(raw, 10);
+    if (Number.isNaN(from)) return;
+    e.preventDefault();
+    onReorder(from, index);
+  };
+
   return (
-    <section className="bg-card border border-gold rounded-sm p-4">
-      <div className="flex items-center justify-between gap-3 mb-3">
+    <section
+      onDragOver={onDragOver}
+      onDragLeave={onDragLeave}
+      onDrop={onDrop}
+      className={`bg-card border rounded-sm p-4 transition ${
+        dragOver ? 'border-gold-strong glow-active' : 'border-gold'
+      } ${dragging ? 'opacity-50' : ''}`}
+    >
+      <div className={`flex items-center justify-between gap-3 ${collapsed ? '' : 'mb-3'}`}>
+        {/* Drag handle: only this is `draggable`, so dragging from the
+            name input doesn't try to drag the input's text instead.
+            Title attr surfaces the affordance on hover. */}
+        <div
+          draggable
+          onDragStart={onDragStart}
+          onDragEnd={onDragEnd}
+          title="drag to reorder folder"
+          className="text-gold hover:text-parchment cursor-grab active:cursor-grabbing select-none px-1 flex-shrink-0 font-cmd text-base leading-none"
+          aria-label="drag handle"
+        >
+          ≡
+        </div>
+        <button
+          type="button"
+          onClick={() => setCollapsed(c => !c)}
+          title={collapsed ? 'expand folder' : 'collapse folder'}
+          className="text-gold hover:text-parchment font-cmd text-sm leading-none px-1 flex-shrink-0"
+        >
+          {collapsed ? '▶' : '▼'}
+        </button>
         <input
           className="lined font-display uppercase tracking-wider text-gold flex-1"
           value={folder.name}
           onChange={e => onRename(e.target.value)}
         />
+        {collapsed && (
+          <span className="text-xs font-cmd text-fade flex-shrink-0">
+            {targets.length}
+          </span>
+        )}
         <div className="flex gap-2 flex-shrink-0">
-          <button onClick={onAddTarget}
+          <button onClick={onAddTargetExpand}
                   className="text-xs font-cmd text-gold border border-gold px-2 py-0.5 hover:bg-active rounded-sm">
             + add target
           </button>
@@ -342,40 +436,64 @@ function FolderCard({ folder, targets, allFolders, onRename, onDelete, onAddTarg
           </button>
         </div>
       </div>
-      <TargetList
-        targets={targets}
-        allFolders={allFolders}
-        currentFolderId={folder.id}
-        emptyHint="no targets in this folder yet"
-        onRenameTarget={onRenameTarget}
-        onRemoveTarget={onRemoveTarget}
-        onMoveTarget={onMoveTarget}
-      />
+      {!collapsed && (
+        <TargetList
+          targets={targets}
+          allFolders={allFolders}
+          currentFolderId={folder.id}
+          emptyHint="no targets in this folder yet"
+          onRenameTarget={onRenameTarget}
+          onRemoveTarget={onRemoveTarget}
+          onMoveTarget={onMoveTarget}
+        />
+      )}
     </section>
   );
 }
 
 function UngroupedCard({ targets, allFolders, onAddTarget, onRenameTarget, onRemoveTarget, onMoveTarget }) {
+  // Local collapse state — same pattern as FolderCard. Inlined (rather
+  // than using SectionCard) so the chevron + count can sit in the
+  // header alongside the title.
+  const [collapsed, setCollapsed] = useState(false);
+  const onAddTargetExpand = () => {
+    setCollapsed(false);
+    onAddTarget();
+  };
   return (
-    <SectionCard
-      title="Ungrouped"
-      right={
-        <button onClick={onAddTarget}
-                className="text-xs font-cmd text-gold border border-gold px-2 py-0.5 hover:bg-active rounded-sm">
+    <section className="bg-card border border-gold rounded-sm p-4">
+      <div className={`flex items-center justify-between gap-3 ${collapsed ? '' : 'mb-3'}`}>
+        <div className="flex items-center gap-2 min-w-0 flex-1">
+          <button
+            type="button"
+            onClick={() => setCollapsed(c => !c)}
+            title={collapsed ? 'expand section' : 'collapse section'}
+            className="text-gold hover:text-parchment font-cmd text-sm leading-none px-1 flex-shrink-0"
+          >
+            {collapsed ? '▶' : '▼'}
+          </button>
+          <h3 className="font-display text-gold text-xs uppercase tracking-wider truncate">Ungrouped</h3>
+          {collapsed && (
+            <span className="text-xs font-cmd text-fade">· {targets.length}</span>
+          )}
+        </div>
+        <button onClick={onAddTargetExpand}
+                className="text-xs font-cmd text-gold border border-gold px-2 py-0.5 hover:bg-active rounded-sm flex-shrink-0">
           + add target
         </button>
-      }
-    >
-      <TargetList
-        targets={targets}
-        allFolders={allFolders}
-        currentFolderId={null}
-        emptyHint="no ungrouped targets"
-        onRenameTarget={onRenameTarget}
-        onRemoveTarget={onRemoveTarget}
-        onMoveTarget={onMoveTarget}
-      />
-    </SectionCard>
+      </div>
+      {!collapsed && (
+        <TargetList
+          targets={targets}
+          allFolders={allFolders}
+          currentFolderId={null}
+          emptyHint="no ungrouped targets"
+          onRenameTarget={onRenameTarget}
+          onRemoveTarget={onRemoveTarget}
+          onMoveTarget={onMoveTarget}
+        />
+      )}
+    </section>
   );
 }
 

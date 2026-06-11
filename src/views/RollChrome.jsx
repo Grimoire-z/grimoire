@@ -16,7 +16,7 @@ import { ModifierRow } from '../components.jsx';
 
 export function RollSidePanel({
   modifiers, activeMods, setActiveMods, modParams, setModParams,
-  targets, folders, selectedTargets, setSelectedTargets, actionAccepts,
+  targets, folders, setFolders, selectedTargets, setSelectedTargets, actionAccepts,
   custom, setCustom,
 }) {
   const toggleMod = useCallback((modId) => {
@@ -50,7 +50,7 @@ export function RollSidePanel({
   return (
     <aside className="lg:col-span-2">
       <TargetsPanel
-        targets={targets} folders={folders}
+        targets={targets} folders={folders} setFolders={setFolders}
         selectedTargets={selectedTargets} setSelectedTargets={setSelectedTargets}
         actionAccepts={actionAccepts}
       />
@@ -150,7 +150,7 @@ export function ComposerBar({ composed, setComposed, copied, setCopied, history 
 // the active tab doesn't take targets (saves, checks), a hint replaces
 // the silent dropping of `-t` flags so users aren't surprised.
 
-function TargetsPanel({ targets, folders, selectedTargets, setSelectedTargets, actionAccepts }) {
+function TargetsPanel({ targets, folders, setFolders, selectedTargets, setSelectedTargets, actionAccepts }) {
   const toggle = (id) => {
     setSelectedTargets(prev => {
       const next = { ...prev };
@@ -174,6 +174,22 @@ function TargetsPanel({ targets, folders, selectedTargets, setSelectedTargets, a
     setSelectedTargets(prev => {
       const next = { ...prev };
       for (const t of folderTargets) delete next[t.id];
+      return next;
+    });
+  };
+
+  // Drag-and-drop reorder for real folders. Same array-splice trick
+  // TargetsView uses; the result writes back through `setFolders` so
+  // the new order persists immediately. Ungrouped isn't a folder in
+  // the array — it stays pinned where it is and isn't draggable.
+  const reorderFolder = (fromIndex, toIndex) => {
+    if (!setFolders || fromIndex === toIndex) return;
+    setFolders(prev => {
+      if (fromIndex < 0 || fromIndex >= prev.length) return prev;
+      if (toIndex < 0   || toIndex >= prev.length)   return prev;
+      const next = [...prev];
+      const [moved] = next.splice(fromIndex, 1);
+      next.splice(toIndex, 0, moved);
       return next;
     });
   };
@@ -208,9 +224,13 @@ function TargetsPanel({ targets, folders, selectedTargets, setSelectedTargets, a
       {/* Folder list is capped at ~half the viewport height. When the
           contents (many folders, big folders, or both) exceed the cap,
           the container scrolls internally so the modifier list below
-          stays anchored where the user expects it. */}
-      <div className="space-y-2 overflow-y-auto scrollbar-thin max-h-[29vh] pr-1">
-        {folders.map(f => {
+          stays anchored where the user expects it. Folders sit two-up
+          in a grid; `items-start` keeps each at its natural height so
+          a one-target folder beside a ten-target folder doesn't get
+          stretched and create dead space. Avrae shortens names in
+          init anyway, so narrower folder cards stay readable. */}
+      <div className="grid grid-cols-2 gap-2 items-start overflow-y-auto scrollbar-thin max-h-[29vh] pr-1">
+        {folders.map((f, i) => {
           const inFolder = targetsInFolder(f.id);
           return (
             <TargetGroup
@@ -221,6 +241,8 @@ function TargetsPanel({ targets, folders, selectedTargets, setSelectedTargets, a
               onToggle={toggle}
               onSelectAll={() => selectAllIn(inFolder)}
               onClear={() => clearAllIn(inFolder)}
+              index={i}
+              onReorder={setFolders ? reorderFolder : null}
             />
           );
         })}
@@ -236,7 +258,7 @@ function TargetsPanel({ targets, folders, selectedTargets, setSelectedTargets, a
           />
         )}
         {targets.length === 0 && (
-          <div className="text-fade italic text-sm text-center py-4">
+          <div className="col-span-2 text-fade italic text-sm text-center py-4">
             no targets — open the <span className="text-gold">Targets</span> tab to create some
           </div>
         )}
@@ -245,17 +267,70 @@ function TargetsPanel({ targets, folders, selectedTargets, setSelectedTargets, a
   );
 }
 
-function TargetGroup({ label, targets, selectedTargets, onToggle, onSelectAll, onClear, mutedHeader }) {
+function TargetGroup({ label, targets, selectedTargets, onToggle, onSelectAll, onClear, mutedHeader, index, onReorder }) {
   const [collapsed, setCollapsed] = useState(false);
+  const [dragging, setDragging]   = useState(false);
+  const [dragOver, setDragOver]   = useState(false);
   const selCount = targets.filter(t => selectedTargets[t.id]).length;
   const allSelected = targets.length > 0 && selCount === targets.length;
+  const isDraggable = typeof onReorder === 'function' && typeof index === 'number';
+
+  // Drag-and-drop: mirrors TargetsView's pattern (custom MIME type so
+  // text drags from the rename input don't accidentally activate the
+  // drop highlight). Source folder fades while dragging, drop target
+  // glows.
+  const onDragStart = (e) => {
+    e.dataTransfer.setData('application/grimoire-folder-index', String(index));
+    e.dataTransfer.setData('text/plain', String(index));
+    e.dataTransfer.effectAllowed = 'move';
+    setDragging(true);
+  };
+  const onDragEnd = () => { setDragging(false); setDragOver(false); };
+  const onDragOver = (e) => {
+    if (!isDraggable) return;
+    if (![...e.dataTransfer.types].includes('application/grimoire-folder-index')) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    setDragOver(true);
+  };
+  const onDragLeave = () => setDragOver(false);
+  const onDrop = (e) => {
+    setDragOver(false);
+    if (!isDraggable) return;
+    const raw = e.dataTransfer.getData('application/grimoire-folder-index');
+    if (raw === '') return;
+    const from = parseInt(raw, 10);
+    if (Number.isNaN(from)) return;
+    e.preventDefault();
+    onReorder(from, index);
+  };
 
   return (
-    <div className="border border-gold rounded-sm bg-card">
-      {/* Header row: chevron + label is its own button (toggle collapse);
-          the per-folder action buttons sit alongside so we don't nest
-          buttons. Count is a non-interactive span on the far right. */}
+    <div
+      onDragOver={isDraggable ? onDragOver : undefined}
+      onDragLeave={isDraggable ? onDragLeave : undefined}
+      onDrop={isDraggable ? onDrop : undefined}
+      className={`border rounded-sm bg-card transition ${
+        dragOver ? 'border-gold-strong glow-active' : 'border-gold'
+      } ${dragging ? 'opacity-50' : ''}`}
+    >
+      {/* Header row: drag handle (real folders only) + chevron+label
+          (collapse toggle) + per-folder bulk action buttons + count.
+          Multiple sibling buttons rather than nesting since HTML
+          doesn't allow nested <button>. */}
       <div className="flex items-center gap-1 px-2 py-1.5">
+        {isDraggable && (
+          <div
+            draggable
+            onDragStart={onDragStart}
+            onDragEnd={onDragEnd}
+            title="drag to reorder folder"
+            aria-label="drag handle"
+            className="text-fade hover:text-gold cursor-grab active:cursor-grabbing select-none font-cmd text-xs leading-none px-0.5 flex-shrink-0"
+          >
+            ≡
+          </div>
+        )}
         <button
           type="button"
           onClick={() => setCollapsed(c => !c)}

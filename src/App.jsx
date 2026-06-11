@@ -395,7 +395,7 @@ export default function App() {
           character={activeCharacter}
           updateCharacter={setActiveCharacter}
           modifiers={mergedModifiers}
-          targets={targets} folders={folders}
+          targets={targets} folders={folders} setFolders={setFolders}
           selectedTargets={selectedTargets} setSelectedTargets={setSelectedTargets}
           settings={settings} setSettings={setSettings}
           tab={tab} setTab={setTab}
@@ -412,7 +412,7 @@ export default function App() {
         <DmRollView
           monsters={Object.values(monsters).filter(m => m.active)}
           modifiers={dmModifiers}
-          targets={dmTargets} folders={dmFolders}
+          targets={dmTargets} folders={dmFolders} setFolders={setDmFolders}
           selectedTargets={selectedTargets} setSelectedTargets={setSelectedTargets}
           activeMods={activeMods} setActiveMods={setActiveMods}
           modParams={modParams} setModParams={setModParams}

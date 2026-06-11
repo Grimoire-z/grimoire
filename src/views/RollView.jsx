@@ -7,7 +7,7 @@ const SLOT_LEVELS = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9];
 
 export default function RollView({
   character, updateCharacter, modifiers,
-  targets, folders, selectedTargets, setSelectedTargets,
+  targets, folders, setFolders, selectedTargets, setSelectedTargets,
   settings, setSettings,
   tab, setTab,
   activeMods, setActiveMods, modParams, setModParams,
@@ -105,7 +105,7 @@ export default function RollView({
           modifiers={modifiers}
           activeMods={activeMods} setActiveMods={setActiveMods}
           modParams={modParams} setModParams={setModParams}
-          targets={targets} folders={folders}
+          targets={targets} folders={folders} setFolders={setFolders}
           selectedTargets={selectedTargets} setSelectedTargets={setSelectedTargets}
           actionAccepts={true}
           custom={custom} setCustom={setCustom}
