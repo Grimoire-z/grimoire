@@ -22,6 +22,13 @@
 // chunk-size warning); the first PDF import pays a one-time ~200-500ms
 // load hit.
 
+// Flip to true to surface the verbose import trace. The in-app diagnostics
+// panel already shows the parsed result, so these stay off in normal use. The
+// one log that remains unconditional is the spell-level-ranges line — the
+// documented first check when DDB shifts its PDF layout (see schema notes).
+const PDF_DEBUG = false;
+const dlog = (...args) => { if (PDF_DEBUG) console.log(...args); };
+
 let pdfjsModulePromise = null;
 
 function loadPdfjs() {
@@ -658,7 +665,7 @@ async function extractXfaFields(pdf) {
   try {
     const xfa = await pdf.getXFADatasets?.();
     if (xfa && typeof xfa === 'object') {
-      console.log('[grimoire] pdf: XFA datasets present');
+      dlog('[grimoire] pdf: XFA datasets present');
       return { xfaPresent: true, xfa };
     }
   } catch (e) {
@@ -669,22 +676,22 @@ async function extractXfaFields(pdf) {
 
 export async function importDdbPdfFile(file) {
   const buf = await file.arrayBuffer();
-  console.log('[grimoire] pdf: getDocument start, bytes=', buf.byteLength);
+  dlog('[grimoire] pdf: getDocument start, bytes=', buf.byteLength);
   // First call in a session loads pdfjs-dist + its worker; cached after that.
   const pdfjs = await loadPdfjs();
   // enableXfa surfaces XFA-form text in some PDFs; harmless when not present.
   const pdf = await pdfjs.getDocument({ data: buf, enableXfa: true }).promise;
-  console.log('[grimoire] pdf: numPages=', pdf.numPages);
+  dlog('[grimoire] pdf: numPages=', pdf.numPages);
 
   const { fields, allWidgetNames, totalWidgets } = await extractFormFields(pdf);
   const fieldNames = Object.keys(fields);
-  console.log('[grimoire] pdf: total widgets=', totalWidgets, 'unique names=', allWidgetNames.length, 'with values=', fieldNames.length);
-  console.log('[grimoire] pdf: widget names=', allWidgetNames);
+  dlog('[grimoire] pdf: total widgets=', totalWidgets, 'unique names=', allWidgetNames.length, 'with values=', fieldNames.length);
+  dlog('[grimoire] pdf: widget names=', allWidgetNames);
 
   const { xfaPresent } = await extractXfaFields(pdf);
 
   const { items, combined } = await extractText(pdf);
-  console.log('[grimoire] pdf: text items=', items.length, 'chars=', combined.length);
+  dlog('[grimoire] pdf: text items=', items.length, 'chars=', combined.length);
 
   const { patch: formPatch, found: formFound } = fieldNames.length
     ? mapFormFields(fields)
@@ -708,13 +715,13 @@ export async function importDdbPdfFile(file) {
         patch.spellSlots = spellResult.spellSlots;
         found.push('spellSlots');
       }
-      console.log('[grimoire] pdf: spells', totalSpells, 'slots', spellResult.spellSlots);
+      dlog('[grimoire] pdf: spells', totalSpells, 'slots', spellResult.spellSlots);
     } catch (e) {
       console.warn('[grimoire] mapSpells failed', e);
     }
   }
 
-  console.log('[grimoire] pdf: form found=', formFound, 'text found=', textFound);
+  dlog('[grimoire] pdf: form found=', formFound, 'text found=', textFound);
 
   return {
     patch,

@@ -1,6 +1,7 @@
 import { useCallback, useState } from 'react';
 import { compose } from '../composer.js';
 import { SAVE_DEFS, SKILL_DEFS } from '../state.js';
+import { onActivate } from '../components.jsx';
 import { RollSidePanel, ComposerBar, useComposerEmit } from './RollChrome.jsx';
 
 const SLOT_LEVELS = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9];
@@ -421,7 +422,10 @@ function ColumnHeader({ children, right }) {
 function CompactRow({ children, active, onClick, stacked }) {
   return (
     <div
+      role="button"
+      tabIndex={0}
       onClick={onClick}
+      onKeyDown={onActivate(onClick)}
       className={`flex items-center gap-2 cursor-pointer transition ${stacked ? 'px-2 py-1.5' : 'px-2 py-1'} ${
         active ? 'bg-active glow-active' : 'hover:bg-card-hover'
       }`}

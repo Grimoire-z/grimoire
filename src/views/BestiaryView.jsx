@@ -127,8 +127,8 @@ export default function BestiaryView({
       {totalCount === 0 && monsterFolders.length === 0 && (
         <div className="border border-gold rounded-sm p-8 text-center bg-card">
           <p className="text-fade italic text-sm max-w-xl mx-auto">
-            Add a monster to get started. Slice 3 will bring 5e.tools URL
-            import so you can paste a bestiary link straight in.
+            Add a monster to get started — start blank, paste a 5e.tools
+            bestiary link, or import a monster's JSON.
           </p>
         </div>
       )}

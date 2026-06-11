@@ -154,8 +154,11 @@ function BackupRestoreSection({ state, replaceState }) {
         return;
       }
       replaceState(parsed);
-      const charName = parsed.character?.name || 'character';
-      setStatus({ ok: true, msg: `imported ${charName} from ${file.name}` });
+      // Post-migration the payload is the v4 vault shape (a `characters` map),
+      // not the v1 single `character` field — report a count instead.
+      const count = Object.keys(parsed.characters || {}).length;
+      const noun = count === 1 ? 'character' : 'characters';
+      setStatus({ ok: true, msg: `imported ${count} ${noun} from ${file.name}` });
     } catch (err) {
       setStatus({ ok: false, msg: err.message || String(err) });
     }

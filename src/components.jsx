@@ -2,9 +2,24 @@
 
 import { useEffect, useRef, useState } from 'react';
 
+// Keydown handler for div/label elements made clickable via onClick, so they
+// also activate from the keyboard (Enter/Space). The target===currentTarget
+// guard means a focusable child (a <select> inside the row) keeps its own
+// Space/Enter behavior without also firing the row's action.
+export function onActivate(handler) {
+  return (e) => {
+    if (e.target !== e.currentTarget) return;
+    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handler(); }
+  };
+}
+
 export function Checkbox({ label, checked, onChange, compact }) {
   return (
     <label
+      role="checkbox"
+      aria-checked={checked}
+      tabIndex={0}
+      onKeyDown={onActivate(onChange)}
       className={`inline-flex items-center gap-2 cursor-pointer ${compact ? 'px-2 py-1 border rounded-sm bg-grimoire' : ''} ${
         compact && checked ? 'border-gold-strong' : compact ? 'border-gold' : ''
       }`}
@@ -41,6 +56,10 @@ export function ActionCard({ title, sub, right, onClick }) {
 export function ModifierRow({ mod, active, paramSelections, onToggle, onParamChange }) {
   return (
     <div
+      role="button"
+      tabIndex={0}
+      aria-pressed={active}
+      onKeyDown={onActivate(onToggle)}
       className={`border rounded-sm px-2 py-1 cursor-pointer transition ${
         active ? 'bg-active glow-active border-gold-strong' : 'bg-card border-gold hover:bg-card-hover'
       }`}

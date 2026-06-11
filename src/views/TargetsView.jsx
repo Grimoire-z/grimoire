@@ -17,7 +17,7 @@ export default function TargetsView({ targets, setTargets, folders, setFolders }
     if (!folder) return;
     if (!window.confirm(`Delete folder "${folder.name}"?\n\nTargets inside will move to Ungrouped.`)) return;
     setFolders(prev => prev.filter(f => f.id !== id));
-    setTargets(prev => prev.map(t => t.folderId === id ? { ...t, folderId: undefined } : t));
+    setTargets(prev => prev.map(t => t.folderId === id ? { ...t, folderId: null } : t));
   };
   // Drag-and-drop reorder. Drop-target's index becomes the new home for the
   // dragged folder; the shared reorderItem does the splice.
@@ -26,7 +26,8 @@ export default function TargetsView({ targets, setTargets, folders, setFolders }
 
   const addTarget = (folderId) => {
     const id = makeShortId('tgt');
-    setTargets(prev => [...prev, { id, name: '', folderId }]);
+    // Normalize the ungrouped sentinel to null (was a mix of null/undefined).
+    setTargets(prev => [...prev, { id, name: '', folderId: folderId ?? null }]);
   };
   const renameTarget = (id, name) => {
     setTargets(prev => prev.map(t => t.id === id ? { ...t, name } : t));
@@ -35,7 +36,7 @@ export default function TargetsView({ targets, setTargets, folders, setFolders }
     setTargets(prev => prev.filter(t => t.id !== id));
   };
   const moveTarget = (id, folderId) => {
-    setTargets(prev => prev.map(t => t.id === id ? { ...t, folderId: folderId || undefined } : t));
+    setTargets(prev => prev.map(t => t.id === id ? { ...t, folderId: folderId || null } : t));
   };
 
   // Bulk import: takes a list of names + a folder destination and
@@ -47,7 +48,7 @@ export default function TargetsView({ targets, setTargets, folders, setFolders }
   const bulkImport = ({ names, folderId, newFolderName, autoNumber }) => {
     if (!names.length) return;
 
-    let resolvedFolderId = folderId || undefined;
+    let resolvedFolderId = folderId || null;
     let folderToAdd = null;
     if (newFolderName) {
       const fid = makeShortId('fld');

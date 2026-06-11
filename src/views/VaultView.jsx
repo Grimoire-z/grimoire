@@ -268,7 +268,7 @@ function AddCard({ onAdd }) {
     <button
       type="button"
       onClick={onAdd}
-      title="Add a new character (slice 5 will offer PDF import or blank)"
+      title="Add a new character — start blank, import a D&D Beyond PDF, or paste DDB JSON"
       className="btn-action flex flex-col items-center justify-center gap-2 p-4 border-2 border-dashed border-gold rounded-sm bg-grimoire hover:bg-card-hover text-fade hover:text-gold transition min-h-[136px]"
     >
       <div className="text-3xl font-cmd leading-none">+</div>

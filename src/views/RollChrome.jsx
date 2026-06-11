@@ -12,7 +12,7 @@
 // and surface it back in the composed slot, matching the original UX.
 
 import { useCallback, useState } from 'react';
-import { ModifierRow } from '../components.jsx';
+import { ModifierRow, onActivate } from '../components.jsx';
 import { useFolderDragReorder, reorderItem } from '../dnd.js';
 
 // Shared compose-emit plumbing. The "fire a command" ritual — push a
@@ -355,7 +355,11 @@ function TargetGroup({ label, targets, selectedTargets, onToggle, onSelectAll, o
             const active = !!selectedTargets[t.id];
             return (
               <div key={t.id}
+                   role="button"
+                   tabIndex={0}
+                   aria-pressed={active}
                    onClick={() => onToggle(t.id)}
+                   onKeyDown={onActivate(() => onToggle(t.id))}
                    className={`flex items-center gap-2 border rounded-sm px-2 py-1 cursor-pointer transition ${
                      active ? 'bg-active glow-active border-gold-strong' : 'bg-grimoire border-gold hover:bg-card-hover'
                    }`}>

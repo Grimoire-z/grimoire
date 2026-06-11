@@ -104,6 +104,10 @@ export default function App() {
     return out;
   }, [characterModifiers, globalModifiers]);
 
+  // Non-null when the last persist attempt failed (quota / stale-build) —
+  // drives the warning banner so the user knows to export a backup.
+  const [persistError, setPersistError] = useState(null);
+
   // Ephemeral roll-view state — not persisted, reset on character switch.
   const [tab,             setTab]             = useState('attacks');
   const [activeMods,      setActiveMods]      = useState({});
@@ -135,15 +139,22 @@ export default function App() {
     setCopied(false);
   }, [activeCharacterId, settings.dmMode]);
 
-  // Persist whenever the durable bits change.
+  // Persist whenever the durable bits change. saveState returns { ok } so a
+  // failure (quota exceeded, or a stale build refusing to overwrite newer
+  // data) becomes a visible banner instead of an invisible console.warn while
+  // the user keeps editing an app that silently stopped saving. In the happy
+  // path setPersistError(null) is a no-op (same value → React bails), so this
+  // adds no extra renders. (No debounce: per-keystroke writes are ~1-4ms and
+  // synchronous saves survive an abrupt window close — a deliberate tradeoff.)
   useEffect(() => {
-    saveState({
+    const result = saveState({
       characters, activeCharacterId,
       globalModifiers, targets, folders,
       monsters, monsterFolders,
       dmModifiers, dmTargets, dmFolders,
       settings,
     });
+    setPersistError(result && result.ok ? null : (result?.reason || 'write-failed'));
   }, [
     characters, activeCharacterId,
     globalModifiers, targets, folders,
@@ -353,6 +364,15 @@ export default function App() {
 
   return (
     <div className="bg-grimoire grain font-body text-parchment min-h-screen relative overflow-hidden">
+      {persistError && (
+        <div className="relative z-30 bg-cmd border-b border-crimson px-6 py-2 text-xs font-cmd text-crimson flex items-center gap-3">
+          <span className="flex-1">
+            {persistError === 'stale-build'
+              ? 'Your saved data was written by a newer version of Grimoire — this build is not overwriting it. Update to the latest release to keep editing.'
+              : 'Changes aren’t being saved (storage may be full). Export a backup from Settings → Backup & Restore before closing.'}
+          </span>
+        </div>
+      )}
       <Header
         mode={mode} setMode={setMode}
         character={activeCharacter}

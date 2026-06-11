@@ -296,7 +296,7 @@ function ProfTriState({ skill, onCycle }) {
       className={`w-3.5 h-3.5 border rounded-sm flex items-center justify-center text-xs flex-shrink-0 transition ${
         filled ? 'border-gold-strong' : 'border-gold'
       }`}
-      style={filled ? { backgroundColor: '#d4a644', color: '#14100c' } : {}}
+      style={filled ? { backgroundColor: 'var(--color-gold)', color: 'var(--color-bg)' } : {}}
     >
       {symbol}
     </button>
@@ -688,13 +688,12 @@ function DdbImport({ character, setCharacter }) {
 
   const importPdfFile = async () => {
     if (!pdfFile) return;
-    console.log('[grimoire] importPdfFile click, file=', pdfFile.name, pdfFile.size, 'bytes');
     setBusy(true);
     setStatus(null);
     setDiagnostics(null);
     try {
       const result = await importDdbPdfFile(pdfFile);
-      console.log('[grimoire] importPdfFile result=', result);
+      // The in-app diagnostics panel surfaces the full result, so no console dump here.
       const { patch, found, itemCount, rawText, fieldCount, fieldNames, fieldValues, totalWidgets, allWidgetNames, xfaPresent } = result;
       setDiagnostics({
         fileName: pdfFile.name,
@@ -756,7 +755,6 @@ function DdbImport({ character, setCharacter }) {
               first run: log in to DDB inside the window — cookies stick after that.
             </span>
           </div>
-          <ImportStatus status={status} className="mt-2 block" />
         </div>
       )}
 
@@ -795,7 +793,7 @@ function DdbImport({ character, setCharacter }) {
       <div className="mt-4 pt-3 border-t border-gold">
         <div className="flex items-baseline justify-between mb-1.5 flex-wrap gap-2">
           <div className="font-display text-xs text-gold uppercase tracking-wider">
-            or, import from DDB JSON <span className="text-fade not-italic font-cmd lowercase normal-case">(recommended)</span>
+            or, import from DDB JSON <span className="text-fade not-italic font-cmd lowercase normal-case">(fallback)</span>
           </div>
           <button
             type="button"
