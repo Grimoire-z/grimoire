@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react';
+import { makeShortId } from '../state.js';
 
 export default function TargetsView({ targets, setTargets, folders, setFolders }) {
   const [importing, setImporting] = useState(false);
 
   const addFolder = () => {
-    const id = `fld_${Date.now().toString(36)}`;
+    const id = makeShortId('fld');
     setFolders(prev => [...prev, { id, name: 'New Folder' }]);
   };
   const renameFolder = (id, name) => {
@@ -34,7 +35,7 @@ export default function TargetsView({ targets, setTargets, folders, setFolders }
   };
 
   const addTarget = (folderId) => {
-    const id = `tgt_${Date.now().toString(36)}`;
+    const id = makeShortId('tgt');
     setTargets(prev => [...prev, { id, name: '', folderId }]);
   };
   const renameTarget = (id, name) => {
@@ -59,18 +60,18 @@ export default function TargetsView({ targets, setTargets, folders, setFolders }
     let resolvedFolderId = folderId || undefined;
     let folderToAdd = null;
     if (newFolderName) {
-      const fid = `fld_${Date.now().toString(36)}`;
+      const fid = makeShortId('fld');
       folderToAdd = { id: fid, name: newFolderName };
       resolvedFolderId = fid;
     }
 
     const finalNames = autoNumber ? numberDuplicates(names) : names;
 
-    // Allocate ids deterministically — Date.now() can collide if we
-    // create N targets in the same millisecond, so include an index.
-    const stamp = Date.now().toString(36);
-    const newTargets = finalNames.map((name, i) => ({
-      id: `tgt_${stamp}_${i}`,
+    // Each makeShortId() draws fresh random entropy, so bulk-creating N
+    // targets in the same tick no longer needs an index suffix to stay
+    // collision-free.
+    const newTargets = finalNames.map((name) => ({
+      id: makeShortId('tgt'),
       name,
       folderId: resolvedFolderId,
     }));

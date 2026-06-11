@@ -11,7 +11,7 @@
 
 import { useMemo, useState } from 'react';
 import { composeFromMod } from '../composer.js';
-import { APPLIES_KINDS, EFFECT_LABELS, EFFECT_PLACEHOLDERS, EFFECT_HAS_VALUE, EFFECT_DESCRIPTIONS, EFFECT_NO_VALUE_BLURB } from '../state.js';
+import { APPLIES_KINDS, EFFECT_LABELS, EFFECT_PLACEHOLDERS, EFFECT_HAS_VALUE, EFFECT_DESCRIPTIONS, EFFECT_NO_VALUE_BLURB, makeShortId } from '../state.js';
 import { Checkbox } from '../components.jsx';
 
 export default function ModifierForgeView({
@@ -50,7 +50,7 @@ export default function ModifierForgeView({
   // the Global toggle in the editor). In DM mode there's no character
   // scope, so + new lands directly in the DM library.
   const newModifier = () => {
-    const id = `mod_${Date.now().toString(36)}`;
+    const id = makeShortId('mod');
     const fresh = {
       id, name: 'New Modifier', sub: '',
       applies: ['attack'], excludes: [],
@@ -82,7 +82,7 @@ export default function ModifierForgeView({
   // Duplicate stays in the same scope as the source.
   const duplicateSelected = () => {
     if (!selected) return;
-    const id = `mod_${Date.now().toString(36)}`;
+    const id = makeShortId('mod');
     const copy = JSON.parse(JSON.stringify(selected));
     copy.id = id;
     copy.name = `${selected.name} (copy)`;

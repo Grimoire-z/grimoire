@@ -21,8 +21,19 @@ const STORAGE_KEY = 'grimoire.state.v1';
 // sizes; not a real UUID because we don't need globally-unique identifiers.
 // Shared by makeCharacterId and makeMonsterId — both pools live in different
 // maps so a cross-pool collision is harmless either way.
-function makeId() {
+export function makeId() {
   return Math.random().toString(36).slice(2, 10);
+}
+
+// Prefixed id for folders/targets/modifiers/stat-block entries, e.g.
+// makeShortId('fld') -> "fld_k3n9q1xa". Replaces the legacy
+// `prefix_${Date.now().toString(36)}` pattern that collided when two ids
+// were minted in the same millisecond (a real bug that bit the targets
+// bulk-import path before it added an index suffix). Math.random() entropy
+// removes the collision class entirely; nothing parses or sorts by id, so
+// the swap is behavior-safe and existing persisted ids are untouched.
+export function makeShortId(prefix) {
+  return `${prefix}_${makeId()}`;
 }
 
 export function makeCharacterId() {
@@ -79,9 +90,12 @@ export const SKILL_DEFS = [
   { id: 'survival',       name: 'Survival',        ability: 'wis' },
 ];
 
-// ─── Default character ─────────────────────────────────────────────────────
+// ─── Demo character ────────────────────────────────────────────────────────
+// A fully-populated sample (level-5 paladin) kept for reference / a future
+// "load demo" affordance. NOT what "Start blank" or a fresh install seeds —
+// that's BLANK_CHARACTER + makeBlankCharacter below.
 
-export const DEFAULT_CHARACTER = {
+export const DEMO_CHARACTER = {
   name: 'Thora Stormhold',
   pronouns: 'she/her',
   ancestry: 'Half-Orc',
@@ -163,16 +177,48 @@ export const DEFAULT_CHARACTER = {
   ddbUrl: '',
 };
 
-// Factory for a fresh character with a unique id. `name` lets callers
-// pass a starter label (e.g. "New Character" for blank, the imported
-// name for PDF imports).
+// A genuinely empty character — zeroed combat, neutral 10s, no attacks /
+// spells / proficiencies. This (not the Thora demo) is what "Start blank",
+// fresh installs, and the delete-last-character fallback seed, and it's the
+// base every importer overlays its patch onto, so a non-caster import no
+// longer inherits the demo's spells and slots.
+export const BLANK_CHARACTER = {
+  name: 'New Character',
+  pronouns: '',
+  ancestry: '',
+  klass: '',
+  level: 1,
+  hp: { current: 0, max: 0, temp: 0 },
+  ac: 10,
+  speed: 30,
+  profBonus: 2,
+  inspiration: false,
+  abilities: { str: 10, dex: 10, con: 10, int: 10, wis: 10, cha: 10 },
+  attacks: [],
+  spells: { 0: [], 1: [], 2: [], 3: [], 4: [], 5: [], 6: [], 7: [], 8: [], 9: [] },
+  spellSlots: {
+    1: { current: 0, max: 0 }, 2: { current: 0, max: 0 }, 3: { current: 0, max: 0 },
+    4: { current: 0, max: 0 }, 5: { current: 0, max: 0 }, 6: { current: 0, max: 0 },
+    7: { current: 0, max: 0 }, 8: { current: 0, max: 0 }, 9: { current: 0, max: 0 },
+  },
+  saves: {},
+  skills: {},
+  portrait: null,
+  modifiers: [],
+  ddbUrl: '',
+};
+
+// Factory for a fresh character with a unique id. Deep-clones BLANK_CHARACTER
+// per call (structuredClone) so created characters never share nested object
+// references with the template or with each other — the old shallow spread of
+// the demo character aliased hp/abilities/spells/etc. across every character
+// minted in a session, one in-place mutation away from cross-character
+// corruption.
 export function makeBlankCharacter(name = 'New Character') {
   return {
-    ...DEFAULT_CHARACTER,
+    ...structuredClone(BLANK_CHARACTER),
     id: makeCharacterId(),
     name,
-    portrait: null,
-    modifiers: [],
   };
 }
 
@@ -388,27 +434,79 @@ function migrate(payload) {
 
 // ─── Persistence ───────────────────────────────────────────────────────────
 
-export function loadState() {
+// Sibling key prefix for rescued payloads (one slot per version tag so a
+// repeatedly-launched incompatible build doesn't spam keys).
+const BACKUP_KEY_PREFIX = 'grimoire.state.backup';
+
+// Read just the stored schemaVersion without committing to a full
+// parse/migrate — used by saveState's rollback guard.
+function storedSchemaVersion() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return null;
-    const parsed = JSON.parse(raw);
-    const migrated = migrate(parsed);
-    if (migrated?.schemaVersion === SCHEMA_VERSION) return migrated;
-    return null; // unknown schema — fall back to defaults rather than corrupt state
+    const v = JSON.parse(raw)?.schemaVersion;
+    return typeof v === 'number' ? v : null;
   } catch {
     return null;
   }
 }
 
+// Best-effort copy of a raw payload we can't currently load, so a build that
+// understands it (or a manual recovery) can get the data back. Never throws.
+function backupRaw(raw, versionTag) {
+  try {
+    localStorage.setItem(`${BACKUP_KEY_PREFIX}.v${versionTag}`, raw);
+  } catch { /* quota / unavailable — nothing more we can do */ }
+}
+
+export function loadState() {
+  let raw;
+  try {
+    raw = localStorage.getItem(STORAGE_KEY);
+  } catch {
+    return null;
+  }
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw);
+    const migrated = migrate(parsed);
+    if (migrated?.schemaVersion === SCHEMA_VERSION) return migrated;
+    // Parsed cleanly but the forward-only migrate chain can't reach the
+    // current schema — almost always a FUTURE payload seen after a version
+    // rollback (the user's two machines drift, or a stale portable exe
+    // shares the same localStorage as an installed build). Returning null
+    // lets App seed a fresh demo vault; without this rescue the persist
+    // effect would then overwrite the still-intact newer payload and
+    // silently destroy the vault. Stash the raw bytes first.
+    backupRaw(raw, parsed?.schemaVersion ?? 'unknown');
+    return null;
+  } catch {
+    // Corrupt JSON — same data-loss hazard, preserve whatever is there.
+    backupRaw(raw, 'corrupt');
+    return null;
+  }
+}
+
+// Returns { ok } so callers (App's persist effect) can surface a failure to
+// the user instead of silently editing an app that stopped saving. Two
+// guarded failure modes: (1) a newer build already wrote this slot — refuse
+// to downgrade-corrupt it; (2) the write itself threw (quota, etc.).
 export function saveState(state) {
+  const stored = storedSchemaVersion();
+  if (stored != null && stored > SCHEMA_VERSION) {
+    // Running an older build against newer-schema data — our write would
+    // clobber the future payload. Leave it untouched.
+    return { ok: false, reason: 'stale-build' };
+  }
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify({
       schemaVersion: SCHEMA_VERSION,
       ...state,
     }));
+    return { ok: true };
   } catch (err) {
     console.warn('grimoire: failed to persist state', err);
+    return { ok: false, reason: 'write-failed', error: err };
   }
 }
 

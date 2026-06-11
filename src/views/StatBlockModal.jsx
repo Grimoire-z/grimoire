@@ -14,6 +14,7 @@
 // so add / remove is just "type a mod" / "clear it".
 
 import { useEffect, useState } from 'react';
+import { makeId } from '../state.js';
 
 const ABILITIES = [
   { key: 'str', label: 'STR' },
@@ -66,11 +67,9 @@ function formatKeyValueList(obj, labels) {
     .join(', ');
 }
 
-// Stable id for newly-added entries. Same length as monster ids — not a
-// real UUID because the in-monster array index is the real key.
-function makeEntryId() {
-  return Math.random().toString(36).slice(2, 10);
-}
+// Stable id for newly-added entries. Reuses the shared makeId() helper;
+// kept as a named local so call sites read clearly.
+const makeEntryId = makeId;
 
 export default function StatBlockModal({ monster, setMonster, onClose }) {
   const [editing, setEditing] = useState(false);

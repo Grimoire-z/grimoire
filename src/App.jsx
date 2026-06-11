@@ -115,10 +115,14 @@ export default function App() {
   const [history,         setHistory]         = useState([]);
   const [copied,          setCopied]          = useState(false);
 
-  // Reset Roll ephemerals when switching characters. We treat switching like
-  // "I just opened the app as character X" — half-composed commands and active
-  // mod toggles don't carry over. View-level state (per-spell expansion, etc.)
-  // resets too because we re-mount the views via key={activeCharacterId}.
+  // Reset Roll ephemerals when switching characters OR flipping player/DM
+  // mode. We treat both as "I just opened the app in this context" — half-
+  // composed commands and active mod toggles don't carry over. The mode flip
+  // matters because dmModifiers is a clone of globalModifiers (shared ids like
+  // 'bless'), so without this a Bless toggled in player mode would silently
+  // keep applying -b 1d4 to every DM-mode monster roll, and the history strip
+  // would show the other surface's commands. View-level state (per-spell
+  // expansion, etc.) resets too because we re-mount the views via key.
   useEffect(() => {
     setTab('attacks');
     setActiveMods({});
@@ -129,7 +133,7 @@ export default function App() {
     setComposed('');
     setHistory([]);
     setCopied(false);
-  }, [activeCharacterId]);
+  }, [activeCharacterId, settings.dmMode]);
 
   // Persist whenever the durable bits change.
   useEffect(() => {
