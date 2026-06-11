@@ -13,8 +13,9 @@
 // saves / skills use a full grid (all six abilities, all 18 skills)
 // so add / remove is just "type a mod" / "clear it".
 
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { makeId, signed } from '../state.js';
+import { Modal } from '../components.jsx';
 
 const ABILITIES = [
   { key: 'str', label: 'STR' },
@@ -70,12 +71,6 @@ const makeEntryId = makeId;
 export default function StatBlockModal({ monster, setMonster, onClose }) {
   const [editing, setEditing] = useState(false);
 
-  useEffect(() => {
-    const onKey = (e) => { if (e.key === 'Escape') onClose(); };
-    document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
-  }, [onClose]);
-
   // Tiny patch helper passed to sub-fields so they don't need to spread
   // the whole monster every change.
   const patch = (p) => setMonster(cur => ({ ...cur, ...p }));
@@ -105,16 +100,8 @@ export default function StatBlockModal({ monster, setMonster, onClose }) {
     (monster.spellcasting?.length || 0) > 0 || !!monster.resist || !!monster.immune;
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center px-4 py-6"
-      style={{ backgroundColor: 'rgba(0, 0, 0, 0.65)' }}
-      onClick={onClose}
-    >
-      <div
-        className="bg-card border border-gold-strong rounded-sm max-w-2xl w-full max-h-[85vh] overflow-y-auto scrollbar-thin"
-        style={{ boxShadow: '0 20px 60px rgba(0,0,0,0.7), 0 0 0 1px rgba(var(--color-gold-rgb), 0.15)' }}
-        onClick={e => e.stopPropagation()}
-      >
+    <Modal onClose={onClose} accent="gold" maxWidth="2xl" scroll="panel" padded={false}>
+      <>
         {/* Header */}
         <div className="px-5 pt-5 pb-3 flex items-start justify-between gap-3 border-b border-gold">
           <div className="min-w-0 flex-1">
@@ -190,8 +177,8 @@ export default function StatBlockModal({ monster, setMonster, onClose }) {
             sensesLine={sensesLine}
           />
         )}
-      </div>
-    </div>
+      </>
+    </Modal>
   );
 }
 

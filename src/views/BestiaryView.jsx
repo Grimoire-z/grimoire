@@ -14,7 +14,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { makeBlankMonster } from '../state.js';
-import { ConfirmDeleteModal } from '../components.jsx';
+import { ConfirmDeleteModal, Modal } from '../components.jsx';
 import StatBlockModal from './StatBlockModal.jsx';
 
 const bridge = typeof window !== 'undefined' ? window.grimoire : null;
@@ -229,12 +229,6 @@ function AddMonsterPicker({ onCancel, onBlank, on5etools, onJson }) {
     if (mode === 'json') jsonRef.current?.focus();
   }, [mode]);
 
-  useEffect(() => {
-    const onKey = (e) => { if (e.key === 'Escape' && !busy) onCancel(); };
-    document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
-  }, [onCancel, busy]);
-
   const submitUrl = async () => {
     const trimmed = url.trim();
     if (!trimmed) return;
@@ -272,16 +266,8 @@ function AddMonsterPicker({ onCancel, onBlank, on5etools, onJson }) {
   };
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center px-4"
-      style={{ backgroundColor: 'rgba(0, 0, 0, 0.65)' }}
-      onClick={busy ? undefined : onCancel}
-    >
-      <div
-        className="bg-card border border-gold-strong rounded-sm max-w-md w-full p-5"
-        style={{ boxShadow: '0 20px 60px rgba(0,0,0,0.7), 0 0 0 1px rgba(var(--color-gold-rgb), 0.15)' }}
-        onClick={e => e.stopPropagation()}
-      >
+    <Modal onClose={onCancel} accent="gold" maxWidth="md" disabled={busy}>
+      <>
         <h3 className="font-display text-lg text-gold uppercase tracking-wider mb-2">
           Add monster
         </h3>
@@ -447,8 +433,8 @@ function AddMonsterPicker({ onCancel, onBlank, on5etools, onJson }) {
             Cancel
           </button>
         </div>
-      </div>
-    </div>
+      </>
+    </Modal>
   );
 }
 

@@ -1,5 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { makeShortId } from '../state.js';
+import { Modal } from '../components.jsx';
 import { useFolderDragReorder, reorderItem } from '../dnd.js';
 
 export default function TargetsView({ targets, setTargets, folders, setFolders }) {
@@ -179,23 +180,9 @@ function ImportListModal({ folders, onCancel, onImport }) {
     });
   };
 
-  useEffect(() => {
-    const onKey = (e) => { if (e.key === 'Escape') onCancel(); };
-    document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
-  }, [onCancel]);
-
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center px-4 py-6 overflow-y-auto"
-      style={{ backgroundColor: 'rgba(0, 0, 0, 0.65)' }}
-      onClick={onCancel}
-    >
-      <div
-        className="bg-card border border-gold-strong rounded-sm max-w-lg w-full p-5 my-auto"
-        style={{ boxShadow: '0 20px 60px rgba(0,0,0,0.7), 0 0 0 1px rgba(var(--color-gold-rgb), 0.15)' }}
-        onClick={e => e.stopPropagation()}
-      >
+    <Modal onClose={onCancel} accent="gold" maxWidth="lg" scroll="backdrop">
+      <>
         <h3 className="font-display text-lg text-gold uppercase tracking-wider mb-2">
           Import target list
         </h3>
@@ -279,8 +266,8 @@ function ImportListModal({ folders, onCancel, onImport }) {
             ↓ Import {names.length > 0 && `(${preview.length})`}
           </button>
         </div>
-      </div>
-    </div>
+      </>
+    </Modal>
   );
 }
 

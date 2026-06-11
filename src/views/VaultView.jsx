@@ -17,7 +17,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { makeBlankCharacter, applyCharacterPatch } from '../state.js';
-import { PortraitDisplay, ConfirmDeleteModal } from '../components.jsx';
+import { PortraitDisplay, ConfirmDeleteModal, Modal } from '../components.jsx';
 import { importDdbPdfFile } from '../ddbPdfImport.js';
 import { importDdbJsonFile, parseDdbJson, DDB_BOOKMARKLET } from '../ddbJsonImport.js';
 
@@ -361,23 +361,9 @@ function AddCharacterPicker({ onCancel, onBlank, onPdf, onJson }) {
     }
   };
 
-  useEffect(() => {
-    const onKey = (e) => { if (e.key === 'Escape' && !busy) onCancel(); };
-    document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
-  }, [onCancel, busy]);
-
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center px-4 py-6 overflow-y-auto"
-      style={{ backgroundColor: 'rgba(0, 0, 0, 0.65)' }}
-      onClick={busy ? undefined : onCancel}
-    >
-      <div
-        className="bg-card border border-gold-strong rounded-sm max-w-lg w-full p-5 my-auto"
-        style={{ boxShadow: '0 20px 60px rgba(0,0,0,0.7), 0 0 0 1px rgba(var(--color-gold-rgb), 0.15)' }}
-        onClick={e => e.stopPropagation()}
-      >
+    <Modal onClose={onCancel} accent="gold" maxWidth="lg" scroll="backdrop" disabled={busy}>
+      <>
         <h3 className="font-display text-lg text-gold uppercase tracking-wider mb-2">
           Add character
         </h3>
@@ -549,7 +535,7 @@ function AddCharacterPicker({ onCancel, onBlank, onPdf, onJson }) {
             Cancel
           </button>
         </div>
-      </div>
-    </div>
+      </>
+    </Modal>
   );
 }

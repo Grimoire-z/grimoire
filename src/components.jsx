@@ -188,6 +188,53 @@ export async function fileToPortraitDataUrl(file, targetSize = 256, quality = 0.
   }
 }
 
+// ─── Modal shell ─────────────────────────────────────────────────────────
+// Shared backdrop + panel + Escape/backdrop-close scaffold that the five
+// hand-rolled modals (ConfirmDelete, AddCharacterPicker, AddMonsterPicker,
+// ImportListModal, StatBlockModal) repeated. Props cover their real
+// variations:
+//   accent    'gold' | 'crimson'  — border + ring color
+//   maxWidth  'md' | 'lg' | '2xl'
+//   scroll    'none'     centered, no scroll
+//             'backdrop' the backdrop scrolls (tall content), panel my-auto
+//             'panel'    the panel scrolls internally (max-h-85vh)
+//   disabled  when true, Escape + backdrop-click are inert (mid-import gate)
+//   padded    apply the standard p-5 (off for self-padding panels)
+export function Modal({ onClose, children, accent = 'gold', maxWidth = 'md', scroll = 'none', disabled = false, padded = true }) {
+  useEffect(() => {
+    const onKey = (e) => { if (e.key === 'Escape' && !disabled) onClose(); };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [onClose, disabled]);
+
+  const ringRgb   = accent === 'crimson' ? 'var(--color-crimson-rgb)' : 'var(--color-gold-rgb)';
+  const ringAlpha = accent === 'crimson' ? 0.3 : 0.15;
+  const borderCls = accent === 'crimson' ? 'border-crimson' : 'border-gold-strong';
+  const maxW = { md: 'max-w-md', lg: 'max-w-lg', '2xl': 'max-w-2xl' }[maxWidth] || 'max-w-md';
+
+  const backdropCls = scroll === 'backdrop'
+    ? 'fixed inset-0 z-50 flex items-center justify-center px-4 py-6 overflow-y-auto'
+    : 'fixed inset-0 z-50 flex items-center justify-center px-4';
+  const panelScroll = scroll === 'panel' ? 'max-h-[85vh] overflow-y-auto scrollbar-thin' : '';
+  const panelMargin = scroll === 'backdrop' ? 'my-auto' : '';
+
+  return (
+    <div
+      className={backdropCls}
+      style={{ backgroundColor: 'rgba(0, 0, 0, 0.65)' }}
+      onClick={disabled ? undefined : onClose}
+    >
+      <div
+        className={`bg-card border ${borderCls} rounded-sm w-full ${maxW} ${padded ? 'p-5' : ''} ${panelScroll} ${panelMargin}`}
+        style={{ boxShadow: `0 20px 60px rgba(0,0,0,0.7), 0 0 0 1px rgba(${ringRgb}, ${ringAlpha})` }}
+        onClick={e => e.stopPropagation()}
+      >
+        {children}
+      </div>
+    </div>
+  );
+}
+
 // ─── ConfirmDeleteModal ──────────────────────────────────────────────────
 // Generic typed-confirm modal for destructive actions. Lifted from
 // VaultView once a second use case (monster deletion in DM mode's
@@ -204,24 +251,11 @@ export function ConfirmDeleteModal({ kind = 'item', name, details, onCancel, onC
   const inputRef = useRef(null);
   const ready = typed === 'DELETE';
 
-  useEffect(() => {
-    inputRef.current?.focus();
-    const onKey = (e) => { if (e.key === 'Escape') onCancel(); };
-    document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
-  }, [onCancel]);
+  useEffect(() => { inputRef.current?.focus(); }, []);
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center px-4"
-      style={{ backgroundColor: 'rgba(0, 0, 0, 0.65)' }}
-      onClick={onCancel}
-    >
-      <div
-        className="bg-card border border-crimson rounded-sm max-w-md w-full p-5"
-        style={{ boxShadow: '0 20px 60px rgba(0,0,0,0.7), 0 0 0 1px rgba(var(--color-crimson-rgb), 0.3)' }}
-        onClick={e => e.stopPropagation()}
-      >
+    <Modal onClose={onCancel} accent="crimson" maxWidth="md">
+      <>
         <h3 className="font-display text-lg text-crimson uppercase tracking-wider mb-2">
           Delete {kind}?
         </h3>
@@ -265,8 +299,8 @@ export function ConfirmDeleteModal({ kind = 'item', name, details, onCancel, onC
             ✕ Delete
           </button>
         </div>
-      </div>
-    </div>
+      </>
+    </Modal>
   );
 }
 
