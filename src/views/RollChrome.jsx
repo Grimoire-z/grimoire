@@ -13,6 +13,37 @@
 
 import { useCallback, useState } from 'react';
 import { ModifierRow } from '../components.jsx';
+import { useFolderDragReorder, reorderItem } from '../dnd.js';
+
+// Shared compose-emit plumbing. The "fire a command" ritual — push a
+// timestamped entry onto the capped history strip, write the clipboard, and
+// flash the copied indicator — was triplicated across RollView.fire,
+// DmRollView.fire, and DmRollView.fireInitAdd, with the cap (8) and flash
+// duration (1500ms) copy-pasted in four places. These two helpers give them
+// one home; the per-surface bits (compose() call, lastFired tracking) stay in
+// each view's wrapper.
+const HISTORY_CAP = 8;
+const COPIED_FLASH_MS = 1500;
+
+function copyAndFlash(cmd, setCopied) {
+  if (navigator.clipboard) navigator.clipboard.writeText(cmd).catch(() => {});
+  setCopied(true);
+  setTimeout(() => setCopied(false), COPIED_FLASH_MS);
+}
+
+// Returns emit(label, cmd): set the composed slot, prepend a history entry
+// (capped), copy + flash. Callers compose the command themselves and pass the
+// final string in.
+export function useComposerEmit({ setComposed, setHistory, setCopied }) {
+  return useCallback((label, cmd) => {
+    setComposed(cmd);
+    setHistory(prev => [{
+      time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      label, cmd,
+    }, ...prev].slice(0, HISTORY_CAP));
+    copyAndFlash(cmd, setCopied);
+  }, [setComposed, setHistory, setCopied]);
+}
 
 export function RollSidePanel({
   modifiers, activeMods, setActiveMods, modParams, setModParams,
@@ -100,11 +131,9 @@ export function RollSidePanel({
 }
 
 export function ComposerBar({ composed, setComposed, copied, setCopied, history }) {
-  const recopy = (cmd) => {
-    navigator.clipboard?.writeText(cmd);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 1500);
-  };
+  // Re-copy doesn't push history (it's re-firing an existing entry), so it
+  // uses copyAndFlash directly rather than the full emit().
+  const recopy = (cmd) => copyAndFlash(cmd, setCopied);
 
   return (
     <div className="fixed bottom-0 left-0 right-0 bg-cmd border-t border-gold-strong z-20">
@@ -183,15 +212,8 @@ function TargetsPanel({ targets, folders, setFolders, selectedTargets, setSelect
   // the new order persists immediately. Ungrouped isn't a folder in
   // the array — it stays pinned where it is and isn't draggable.
   const reorderFolder = (fromIndex, toIndex) => {
-    if (!setFolders || fromIndex === toIndex) return;
-    setFolders(prev => {
-      if (fromIndex < 0 || fromIndex >= prev.length) return prev;
-      if (toIndex < 0   || toIndex >= prev.length)   return prev;
-      const next = [...prev];
-      const [moved] = next.splice(fromIndex, 1);
-      next.splice(toIndex, 0, moved);
-      return next;
-    });
+    if (!setFolders) return;
+    setFolders(prev => reorderItem(prev, fromIndex, toIndex));
   };
 
   const selectedCount = targets.filter(t => selectedTargets[t.id]).length;
@@ -269,47 +291,13 @@ function TargetsPanel({ targets, folders, setFolders, selectedTargets, setSelect
 
 function TargetGroup({ label, targets, selectedTargets, onToggle, onSelectAll, onClear, mutedHeader, index, onReorder }) {
   const [collapsed, setCollapsed] = useState(false);
-  const [dragging, setDragging]   = useState(false);
-  const [dragOver, setDragOver]   = useState(false);
+  const { dragging, dragOver, enabled: isDraggable, handleProps, dropZoneProps } = useFolderDragReorder({ index, onReorder });
   const selCount = targets.filter(t => selectedTargets[t.id]).length;
   const allSelected = targets.length > 0 && selCount === targets.length;
-  const isDraggable = typeof onReorder === 'function' && typeof index === 'number';
-
-  // Drag-and-drop: mirrors TargetsView's pattern (custom MIME type so
-  // text drags from the rename input don't accidentally activate the
-  // drop highlight). Source folder fades while dragging, drop target
-  // glows.
-  const onDragStart = (e) => {
-    e.dataTransfer.setData('application/grimoire-folder-index', String(index));
-    e.dataTransfer.setData('text/plain', String(index));
-    e.dataTransfer.effectAllowed = 'move';
-    setDragging(true);
-  };
-  const onDragEnd = () => { setDragging(false); setDragOver(false); };
-  const onDragOver = (e) => {
-    if (!isDraggable) return;
-    if (![...e.dataTransfer.types].includes('application/grimoire-folder-index')) return;
-    e.preventDefault();
-    e.dataTransfer.dropEffect = 'move';
-    setDragOver(true);
-  };
-  const onDragLeave = () => setDragOver(false);
-  const onDrop = (e) => {
-    setDragOver(false);
-    if (!isDraggable) return;
-    const raw = e.dataTransfer.getData('application/grimoire-folder-index');
-    if (raw === '') return;
-    const from = parseInt(raw, 10);
-    if (Number.isNaN(from)) return;
-    e.preventDefault();
-    onReorder(from, index);
-  };
 
   return (
     <div
-      onDragOver={isDraggable ? onDragOver : undefined}
-      onDragLeave={isDraggable ? onDragLeave : undefined}
-      onDrop={isDraggable ? onDrop : undefined}
+      {...dropZoneProps}
       className={`border rounded-sm bg-card transition ${
         dragOver ? 'border-gold-strong glow-active' : 'border-gold'
       } ${dragging ? 'opacity-50' : ''}`}
@@ -321,9 +309,7 @@ function TargetGroup({ label, targets, selectedTargets, onToggle, onSelectAll, o
       <div className="flex items-center gap-1 px-2 py-1.5">
         {isDraggable && (
           <div
-            draggable
-            onDragStart={onDragStart}
-            onDragEnd={onDragEnd}
+            {...handleProps}
             title="drag to reorder folder"
             aria-label="drag handle"
             className="text-fade hover:text-gold cursor-grab active:cursor-grabbing select-none font-cmd text-xs leading-none px-0.5 flex-shrink-0"

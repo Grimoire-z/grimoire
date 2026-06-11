@@ -25,22 +25,6 @@ export function Checkbox({ label, checked, onChange, compact }) {
   );
 }
 
-export function TabBar({ tabs, current, onChange }) {
-  return (
-    <div className="flex gap-1 mb-4 border-b border-gold">
-      {tabs.map(t => (
-        <button key={t.id} onClick={() => onChange(t.id)}
-          className={`px-4 py-2 font-display text-xs uppercase tracking-wider transition ${
-            current === t.id ? 'text-gold border-b-2 -mb-px' : 'text-fade hover:text-parchment'
-          }`}
-          style={current === t.id ? { borderBottomColor: 'var(--color-gold)' } : {}}>
-          {t.label}
-        </button>
-      ))}
-    </div>
-  );
-}
-
 export function ActionCard({ title, sub, right, onClick }) {
   return (
     <button onClick={onClick}

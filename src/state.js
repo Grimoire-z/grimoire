@@ -44,6 +44,13 @@ export function makeMonsterId() {
   return makeId();
 }
 
+// Format a numeric modifier as a signed string: 5 → "+5", -1 → "-1", 0 → "+0".
+// null/undefined/NaN → "". Shared by the DDB importer and StatBlockModal.
+export function signed(n) {
+  if (n == null || Number.isNaN(n)) return '';
+  return n >= 0 ? `+${n}` : `${n}`;
+}
+
 // Minimal monster shape for slice 1 — name + active + optional folderId.
 // Richer fields (AC, HP, abilities, actions, legendary actions, …) land in
 // later slices as the 5e.tools importer and DM Roll view land.

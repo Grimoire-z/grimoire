@@ -27,7 +27,7 @@
 // CharacterView) call `applyCharacterPatch` on the patch just like
 // the PDF path.
 
-import { SAVE_DEFS, SKILL_DEFS } from './state.js';
+import { SAVE_DEFS, SKILL_DEFS, signed } from './state.js';
 
 // The bookmarklet itself. One-line `javascript:` URL the user saves as
 // a browser bookmark. When invoked on a DDB character page, it hooks
@@ -56,12 +56,6 @@ export const DDB_BOOKMARKLET = `javascript:(function(){if(window.__grimoireDdbHo
 
 // ─── DDB shape helpers ────────────────────────────────────────────────
 
-// "+5" / "-1" / "+0" — DDB hands us numeric modifiers; the rest of the
-// app stores them as signed strings.
-function signed(n) {
-  if (n == null || Number.isNaN(n)) return '';
-  return n >= 0 ? `+${n}` : `${n}`;
-}
 
 // DDB skill names use display casing/spaces ("Sleight of Hand",
 // "Animal Handling"); SKILL_DEFS use camelCase ids. Build the lookup

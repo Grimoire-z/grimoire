@@ -14,7 +14,7 @@
 import { useCallback, useState } from 'react';
 import { compose } from '../composer.js';
 import { ActionCard } from '../components.jsx';
-import { RollSidePanel, ComposerBar } from './RollChrome.jsx';
+import { RollSidePanel, ComposerBar, useComposerEmit } from './RollChrome.jsx';
 
 const SAVE_LABELS = { str: 'STR', dex: 'DEX', con: 'CON', int: 'INT', wis: 'WIS', cha: 'CHA' };
 
@@ -67,6 +67,8 @@ export default function DmRollView({
   custom, setCustom,
   composed, setComposed, history, setHistory, copied, setCopied,
 }) {
+  const emit = useComposerEmit({ setComposed, setHistory, setCopied });
+
   const fire = useCallback((action) => {
     const targetNames = targets.filter(t => selectedTargets[t.id]).map(t => t.name);
     const cmd = compose({
@@ -74,15 +76,8 @@ export default function DmRollView({
       activeMods: Object.keys(activeMods),
       modParams, modifiers, custom,
     });
-    setComposed(cmd);
-    setHistory(prev => [{
-      time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      label: action.label, cmd,
-    }, ...prev].slice(0, 8));
-    if (navigator.clipboard) navigator.clipboard.writeText(cmd).catch(() => {});
-    setCopied(true);
-    setTimeout(() => setCopied(false), 1500);
-  }, [activeMods, modParams, modifiers, custom, targets, selectedTargets, setComposed, setHistory, setCopied]);
+    emit(action.label, cmd);
+  }, [activeMods, modParams, modifiers, custom, targets, selectedTargets, emit]);
 
   // Init-add bypasses the regular composer pipeline — `!i madd` isn't
   // one of the kind-driven commands and doesn't take targets/modifiers.
@@ -98,15 +93,8 @@ export default function DmRollView({
     const cmd = cmdName && cmdName !== lookupName
       ? `!i madd "${lookupName}" -name "${cmdName}"`
       : `!i madd "${lookupName}"`;
-    setComposed(cmd);
-    setHistory(prev => [{
-      time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      label: `${displayName || lookupName} · init add`, cmd,
-    }, ...prev].slice(0, 8));
-    if (navigator.clipboard) navigator.clipboard.writeText(cmd).catch(() => {});
-    setCopied(true);
-    setTimeout(() => setCopied(false), 1500);
-  }, [setComposed, setHistory, setCopied]);
+    emit(`${displayName || lookupName} · init add`, cmd);
+  }, [emit]);
 
   // Per-monster "out of turn" toggle. Ephemeral on purpose — OOT is a
   // moment-to-moment combat state (you flip it on for a reaction, off

@@ -23,7 +23,7 @@ import { importDdbJsonFile, parseDdbJson, DDB_BOOKMARKLET } from '../ddbJsonImpo
 
 export default function VaultView({
   characters, activeCharacterId,
-  onEnter, onAdd, onAddAndEnter, onRename, onDuplicate, onDelete,
+  onEnter, onAddAndEnter, onRename, onDuplicate, onDelete,
 }) {
   // Sort by name for stable display; "recently active" sort would need
   // an updatedAt per character — punt to a later polish.

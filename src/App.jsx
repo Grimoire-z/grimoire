@@ -197,13 +197,6 @@ export default function App() {
     setMode('roll');
   };
 
-  // Vault → add a character (used by slices 2+5). Returns the new id so
-  // callers can immediately switch into it or auto-open the editor.
-  const addCharacter = (character) => {
-    setCharacters(cs => ({ ...cs, [character.id]: character }));
-    return character.id;
-  };
-
   // Add and immediately enter — the common "create blank / import"
   // path. Doing this as a single function avoids the stale-closure trap
   // in `enterCharacter`'s existence check: a freshly-added character
@@ -370,7 +363,6 @@ export default function App() {
           characters={characters}
           activeCharacterId={activeCharacterId}
           onEnter={enterCharacter}
-          onAdd={addCharacter}
           onAddAndEnter={addAndEnterCharacter}
           onRename={renameCharacter}
           onDuplicate={duplicateCharacter}

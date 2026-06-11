@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { makeShortId } from '../state.js';
+import { useFolderDragReorder, reorderItem } from '../dnd.js';
 
 export default function TargetsView({ targets, setTargets, folders, setFolders }) {
   const [importing, setImporting] = useState(false);
@@ -18,21 +19,10 @@ export default function TargetsView({ targets, setTargets, folders, setFolders }
     setFolders(prev => prev.filter(f => f.id !== id));
     setTargets(prev => prev.map(t => t.folderId === id ? { ...t, folderId: undefined } : t));
   };
-  // Drag-and-drop reorder. Drop-target's index becomes the new home
-  // for the dragged folder; everything between shifts by one in the
-  // appropriate direction. Same array-splice trick the v0.8 vault
-  // would use if we ever surface drag-reorder there too.
-  const reorderFolder = (fromIndex, toIndex) => {
-    if (fromIndex === toIndex) return;
-    setFolders(prev => {
-      if (fromIndex < 0 || fromIndex >= prev.length) return prev;
-      if (toIndex < 0   || toIndex >= prev.length)   return prev;
-      const next = [...prev];
-      const [moved] = next.splice(fromIndex, 1);
-      next.splice(toIndex, 0, moved);
-      return next;
-    });
-  };
+  // Drag-and-drop reorder. Drop-target's index becomes the new home for the
+  // dragged folder; the shared reorderItem does the splice.
+  const reorderFolder = (fromIndex, toIndex) =>
+    setFolders(prev => reorderItem(prev, fromIndex, toIndex));
 
   const addTarget = (folderId) => {
     const id = makeShortId('tgt');
@@ -340,13 +330,10 @@ function numberDuplicates(names) {
 }
 
 function FolderCard({ folder, index, targets, allFolders, onRename, onDelete, onAddTarget, onRenameTarget, onRemoveTarget, onMoveTarget, onReorder }) {
-  // Drag-state lives locally per card. `dragging` fades the source
-  // while it's mid-drag; `dragOver` highlights the drop target.
-  const [dragging, setDragging] = useState(false);
-  const [dragOver, setDragOver] = useState(false);
-  // Collapse toggle is also local — defaults to expanded so existing
-  // workflows are unchanged. Clicking + add target auto-expands so
-  // the user can see the new row they're about to fill in.
+  const { dragging, dragOver, handleProps, dropZoneProps } = useFolderDragReorder({ index, onReorder });
+  // Collapse toggle is local — defaults to expanded so existing workflows are
+  // unchanged. Clicking + add target auto-expands so the user can see the new
+  // row they're about to fill in.
   const [collapsed, setCollapsed] = useState(false);
 
   const onAddTargetExpand = () => {
@@ -354,54 +341,18 @@ function FolderCard({ folder, index, targets, allFolders, onRename, onDelete, on
     onAddTarget();
   };
 
-  const onDragStart = (e) => {
-    // Use the integer index as the dataTransfer payload. The card the
-    // drop lands on reads it to know where to insert.
-    e.dataTransfer.setData('application/grimoire-folder-index', String(index));
-    e.dataTransfer.setData('text/plain', String(index)); // fallback for browsers that ignore custom types
-    e.dataTransfer.effectAllowed = 'move';
-    setDragging(true);
-  };
-  const onDragEnd = () => {
-    setDragging(false);
-    setDragOver(false);
-  };
-  const onDragOver = (e) => {
-    // Only react to drags whose payload looks like ours — text drags
-    // out of the rename inputs shouldn't trigger drop-target styling.
-    if (![...e.dataTransfer.types].includes('application/grimoire-folder-index')) return;
-    e.preventDefault();
-    e.dataTransfer.dropEffect = 'move';
-    setDragOver(true);
-  };
-  const onDragLeave = () => setDragOver(false);
-  const onDrop = (e) => {
-    setDragOver(false);
-    const raw = e.dataTransfer.getData('application/grimoire-folder-index');
-    if (raw === '') return;
-    const from = parseInt(raw, 10);
-    if (Number.isNaN(from)) return;
-    e.preventDefault();
-    onReorder(from, index);
-  };
-
   return (
     <section
-      onDragOver={onDragOver}
-      onDragLeave={onDragLeave}
-      onDrop={onDrop}
+      {...dropZoneProps}
       className={`bg-card border rounded-sm p-4 transition ${
         dragOver ? 'border-gold-strong glow-active' : 'border-gold'
       } ${dragging ? 'opacity-50' : ''}`}
     >
       <div className={`flex items-center justify-between gap-3 ${collapsed ? '' : 'mb-3'}`}>
-        {/* Drag handle: only this is `draggable`, so dragging from the
-            name input doesn't try to drag the input's text instead.
-            Title attr surfaces the affordance on hover. */}
+        {/* Drag handle: only this is `draggable` (via handleProps), so
+            dragging from the name input doesn't drag the input's text. */}
         <div
-          draggable
-          onDragStart={onDragStart}
-          onDragEnd={onDragEnd}
+          {...handleProps}
           title="drag to reorder folder"
           className="text-gold hover:text-parchment cursor-grab active:cursor-grabbing select-none px-1 flex-shrink-0 font-cmd text-base leading-none"
           aria-label="drag handle"

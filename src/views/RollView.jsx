@@ -1,7 +1,7 @@
 import { useCallback, useState } from 'react';
 import { compose } from '../composer.js';
 import { SAVE_DEFS, SKILL_DEFS } from '../state.js';
-import { RollSidePanel, ComposerBar } from './RollChrome.jsx';
+import { RollSidePanel, ComposerBar, useComposerEmit } from './RollChrome.jsx';
 
 const SLOT_LEVELS = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9];
 
@@ -19,6 +19,7 @@ export default function RollView({
   // matching the screenshot's purple "last clicked" treatment. Reset on
   // character switch via App.jsx's `key={activeCharacterId}` remount.
   const [lastFired, setLastFired] = useState(null);
+  const emit = useComposerEmit({ setComposed, setHistory, setCopied });
 
   const fire = useCallback((action) => {
     const targetNames = targets
@@ -29,16 +30,9 @@ export default function RollView({
       activeMods: Object.keys(activeMods),
       modParams, modifiers, custom,
     });
-    setComposed(cmd);
     setLastFired({ kind: action.kind, id: action.id });
-    setHistory(prev => [{
-      time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      label: action.label, cmd,
-    }, ...prev].slice(0, 8));
-    if (navigator.clipboard) navigator.clipboard.writeText(cmd).catch(() => {});
-    setCopied(true);
-    setTimeout(() => setCopied(false), 1500);
-  }, [activeMods, modParams, modifiers, custom, targets, selectedTargets, setComposed, setHistory, setCopied]);
+    emit(action.label, cmd);
+  }, [activeMods, modParams, modifiers, custom, targets, selectedTargets, emit]);
 
   // Avrae's !cast handles spell attacks — so any "attack" whose id matches
   // a spell is redundant in the Attacks tab. Filter at render time so the

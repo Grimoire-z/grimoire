@@ -14,7 +14,7 @@
 // so add / remove is just "type a mod" / "clear it".
 
 import { useEffect, useState } from 'react';
-import { makeId } from '../state.js';
+import { makeId, signed } from '../state.js';
 
 const ABILITIES = [
   { key: 'str', label: 'STR' },
@@ -54,10 +54,6 @@ const SKILL_LABELS = Object.fromEntries(SKILLS.map(s => [s.key, s.label]));
 function abilityMod(score) {
   if (typeof score !== 'number') return null;
   return Math.floor((score - 10) / 2);
-}
-function signedMod(mod) {
-  if (mod == null) return '';
-  return mod >= 0 ? `+${mod}` : `${mod}`;
 }
 function formatKeyValueList(obj, labels) {
   if (!obj || typeof obj !== 'object') return '';
@@ -241,7 +237,7 @@ function ReadView({ monster, identity, savesLine, skillsLine, sensesLine }) {
                 <div key={key}>
                   <div className="font-display text-xs text-gold uppercase tracking-wider">{label}</div>
                   <div className="text-parchment text-base font-cmd mt-0.5">{score ?? '—'}</div>
-                  <div className="text-fade text-xs font-cmd">{mod != null ? `(${signedMod(mod)})` : ''}</div>
+                  <div className="text-fade text-xs font-cmd">{mod != null ? `(${signed(mod)})` : ''}</div>
                 </div>
               );
             })}
@@ -335,7 +331,7 @@ function EditView({ monster, setMonster, patch, patchHp, patchAbilities, patchSa
                 className="lined w-full text-center font-cmd"
               />
               <div className="text-fade text-[10px] font-cmd mt-1">
-                {(() => { const m = abilityMod(monster.abilities?.[key]); return m != null ? `(${signedMod(m)})` : ''; })()}
+                {(() => { const m = abilityMod(monster.abilities?.[key]); return m != null ? `(${signed(m)})` : ''; })()}
               </div>
             </div>
           ))}
