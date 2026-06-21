@@ -403,6 +403,7 @@ export default function App() {
         mode={mode} setMode={setMode}
         character={activeCharacter}
         dmMode={dmMode}
+        onToggleDmMode={() => setSettings(s => ({ ...s, dmMode: !s.dmMode }))}
       />
       {!dmMode && mode === 'vault' && (
         <VaultView
@@ -508,14 +509,14 @@ export default function App() {
   );
 }
 
-function Header({ mode, setMode, character, dmMode }) {
+function Header({ mode, setMode, character, dmMode, onToggleDmMode }) {
   const subhead =
     mode === 'vault'     ? 'choose a character to play, or add a new one' :
     mode === 'bestiary'  ? 'imported monster stat blocks · mark "active" to surface them on the Roll page' :
     mode === 'character' ? 'authoring · changes save automatically' :
     mode === 'targets'   ? 'organize encounter targets into folders' :
     mode === 'modifiers' ? 'forge toggleable buffs, debuffs, and conditions that stack onto your rolls' :
-    mode === 'settings'  ? 'theme · typography · DM mode toggle · updates · backup' :
+    mode === 'settings'  ? 'theme · typography · updates · backup' :
     null;
 
   // Player mode hides the nav on its home surface (vault — no active character
@@ -553,20 +554,36 @@ function Header({ mode, setMode, character, dmMode }) {
             ))}
           </nav>
         )}
-        <button
-          type="button"
-          onClick={() => setMode('settings')}
-          title="Settings"
-          aria-label="Settings"
-          aria-pressed={mode === 'settings'}
-          className={`flex items-center justify-center w-8 h-8 border rounded-sm transition ${
-            mode === 'settings'
-              ? 'text-gold border-gold-strong bg-active'
-              : 'text-fade border-gold hover:text-parchment hover:bg-active'
-          }`}
-        >
-          <D20Icon size={18} />
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={onToggleDmMode}
+            title={dmMode ? 'Switch to Player mode' : 'Switch to DM mode'}
+            aria-label={dmMode ? 'Switch to Player mode' : 'Switch to DM mode'}
+            aria-pressed={dmMode}
+            className={`flex items-center justify-center h-8 px-2.5 border rounded-sm transition font-cmd text-xs uppercase tracking-wider ${
+              dmMode
+                ? 'text-gold border-gold-strong bg-active'
+                : 'text-fade border-gold hover:text-parchment hover:bg-active'
+            }`}
+          >
+            DM
+          </button>
+          <button
+            type="button"
+            onClick={() => setMode('settings')}
+            title="Settings"
+            aria-label="Settings"
+            aria-pressed={mode === 'settings'}
+            className={`flex items-center justify-center w-8 h-8 border rounded-sm transition ${
+              mode === 'settings'
+                ? 'text-gold border-gold-strong bg-active'
+                : 'text-fade border-gold hover:text-parchment hover:bg-active'
+            }`}
+          >
+            <D20Icon size={18} />
+          </button>
+        </div>
       </div>
       <div className="divider mb-3" />
       {mode === 'roll' && !dmMode && character ? (
