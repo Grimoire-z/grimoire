@@ -760,7 +760,8 @@ function DdbImport({ character, setCharacter }) {
 
       <div className="text-xs text-fade italic mb-2">
         or, select a D&amp;D Beyond character-sheet <span className="font-cmd text-gold">.pdf</span> export — best-effort field extraction.
-        importing will overwrite character info (ability scores, HP, AC, etc.) — modifiers are left alone.
+        importing updates character info (ability scores, HP, AC, etc.) and merges attacks &amp; spells —
+        matching entries refresh, new ones are added, and custom entries you added by hand are kept. modifiers are left alone.
       </div>
       <div className="flex items-center gap-3 flex-wrap">
         <FilePicker accept="application/pdf,.pdf"
@@ -775,7 +776,7 @@ function DdbImport({ character, setCharacter }) {
             <button onClick={importPdfFile}
                     disabled={busy}
                     className="text-xs font-cmd uppercase tracking-wider text-gold border border-gold-strong px-3 py-1.5 hover:bg-active transition disabled:opacity-50">
-              {busy ? '… importing' : '↓ import & overwrite'}
+              {busy ? '… importing' : '↓ import & update'}
             </button>
             <button onClick={() => { setPdfFile(null); setStatus(null); }}
                     disabled={busy}
@@ -822,7 +823,7 @@ function DdbImport({ character, setCharacter }) {
                 <li>Click DDB's <span className="text-parchment not-italic">Print to PDF</span> / <span className="text-parchment not-italic">Download</span> button.</li>
                 <li>Find the request to <span className="font-cmd text-gold not-italic">/character/v5/pdf</span> → click it.</li>
                 <li>Switch to the <span className="text-parchment not-italic">Payload</span> tab → click <span className="text-parchment not-italic">view source</span> at the top → select all + copy.</li>
-                <li>Paste back here in the JSON textarea and click Import &amp; overwrite.</li>
+                <li>Paste back here in the JSON textarea and click Import &amp; update.</li>
               </ol>
             </div>
             <div className="border-t border-gold pt-2">
@@ -866,7 +867,7 @@ function DdbImport({ character, setCharacter }) {
             disabled={busy || !jsonText.trim()}
             className="text-xs font-cmd uppercase tracking-wider text-gold border border-gold-strong px-3 py-1.5 hover:bg-active transition disabled:opacity-30"
           >
-            {busy ? '… importing' : '↓ import & overwrite'}
+            {busy ? '… importing' : '↓ import & update'}
           </button>
           {jsonText.trim() && (
             <button

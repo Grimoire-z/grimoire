@@ -233,18 +233,66 @@ export function makeBlankCharacter(name = 'New Character') {
   };
 }
 
-// Apply a partial character patch (as produced by ddbPdfImport.js) over
+// Merge an imported entry list into an existing one by `id`:
+//   - an imported entry whose id matches an existing entry UPDATES it in
+//     place ({ ...existing, ...imported } — fields the import doesn't carry,
+//     like a user-set `phrase` or the editor's `_key`, survive);
+//   - imported entries with no match are appended;
+//   - existing entries the import doesn't mention (custom actions the user
+//     added by hand) are KEPT, not deleted.
+// `preserve` lists fields whose existing value wins over the imported one
+// even on a match (e.g. `prepared` — daily prep is a runtime decision the
+// user toggles in the editor; re-importing must not trample it).
+function mergeEntriesById(existing, imported, preserve = []) {
+  if (!Array.isArray(imported)) return existing || [];
+  const merged = (existing || []).slice();
+  for (const imp of imported) {
+    const idx = merged.findIndex(e => e.id === imp.id);
+    if (idx >= 0) {
+      const prev = merged[idx];
+      const next = { ...prev, ...imp };
+      for (const field of preserve) {
+        if (prev[field] !== undefined) next[field] = prev[field];
+      }
+      merged[idx] = next;
+    } else {
+      merged.push(imp);
+    }
+  }
+  return merged;
+}
+
+// Per-level spell merge. Levels the patch doesn't mention stay untouched;
+// mentioned levels merge by id with `prepared` preserved on matches. Each
+// touched level is re-sorted alphabetically (same locale-aware sort the
+// importers use) so hand-added spells slot into reading order instead of
+// dangling at the end.
+function mergeSpells(existing = {}, imported) {
+  if (!imported) return existing;
+  const out = { ...existing };
+  for (const lvl of Object.keys(imported)) {
+    const merged = mergeEntriesById(existing[lvl] || [], imported[lvl] || [], ['prepared']);
+    merged.sort((a, b) => (a.name || '').localeCompare(b.name || '', undefined, { sensitivity: 'base' }));
+    out[lvl] = merged;
+  }
+  return out;
+}
+
+// Apply a partial character patch (as produced by the DDB importers) over
 // an existing character. Top-level scalars overwrite; sub-objects merge
-// so a partial import doesn't wipe untouched entries; lists & dicts
-// (attacks, spells) are replaced wholesale because import sources
-// represent the full intended state for those fields.
+// so a partial import doesn't wipe untouched entries; attacks & spells
+// MERGE BY ID (update matches, add new, keep unmatched) so a re-import /
+// DDB refresh no longer deletes custom actions the user added by hand.
+// The tradeoff: something deleted on the DDB side lingers here until
+// removed manually in the editor — that's the intended direction, since
+// hand-added entries vastly outnumber DDB-side deletions in practice.
 //
 // Used by:
-//   - CharacterView "Import Character sheet" card: applies patch to the
-//     active character, overwriting fields that came in.
-//   - VaultView empty-card "Import from PDF" flow: applies patch to a
-//     fresh blank character, producing a brand-new vault entry instead
-//     of mutating the active character.
+//   - CharacterView "Import Character sheet" card + Refresh-from-DDB:
+//     applies the patch to the active character.
+//   - VaultView empty-card import flow: applies the patch to a fresh blank
+//     character (merge over empty lists ≡ the old replace, so creation
+//     behavior is unchanged).
 export function applyCharacterPatch(character, patch) {
   return {
     ...character,
@@ -254,6 +302,8 @@ export function applyCharacterPatch(character, patch) {
     saves:      patch.saves      ? { ...character.saves,      ...patch.saves }      : character.saves,
     skills:     patch.skills     ? { ...character.skills,     ...patch.skills }     : character.skills,
     spellSlots: patch.spellSlots ? { ...character.spellSlots, ...patch.spellSlots } : character.spellSlots,
+    attacks:    mergeEntriesById(character.attacks, patch.attacks),
+    spells:     mergeSpells(character.spells, patch.spells),
   };
 }
 
