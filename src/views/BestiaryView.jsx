@@ -69,28 +69,33 @@ export default function BestiaryView({
     addAndClose(result.monster);
   };
 
-  // "Import from JSON" branch — paste or file. The parser + mapper live
-  // in main (reusing `mapFiveEtoolsMonster` from the URL importer), so
-  // the renderer just hands over the raw text and surfaces errors.
+  // "Import from JSON" branch — paste or file. The parser + mappers live in
+  // main (5e.tools + Bestiary Builder formats, auto-detected), so the renderer
+  // just hands over the raw text and surfaces errors. Returns a LIST — a
+  // Bestiary Builder export can carry a whole homebrew bestiary at once.
   const onPickJson = async (jsonText) => {
     if (!bridge?.importMonsterFromJson) {
       throw new Error('JSON import requires the desktop app build');
     }
     const result = await bridge.importMonsterFromJson(jsonText);
     if (!result.ok) throw new Error(result.error);
-    addAndClose(result.monster);
+    addAllAndClose(result.monsters);
   };
 
-  const addAndClose = (mapped) => {
-    // Mapped shape has the stat-block fields but no id/active/folderId;
-    // overlay onto a blank so the bestiary invariants stay intact.
-    const monster = {
-      ...makeBlankMonster(mapped.name || 'Imported Monster'),
-      ...mapped,
-    };
+  // Overlay each mapped stat block (no id/active/folderId of its own) onto a
+  // fresh blank so the bestiary invariants stay intact. `onAddMonster` uses a
+  // functional setState, so adding N in a loop batches cleanly.
+  const addAllAndClose = (mappedList) => {
+    for (const mapped of (mappedList || [])) {
+      onAddMonster({
+        ...makeBlankMonster(mapped.name || 'Imported Monster'),
+        ...mapped,
+      });
+    }
     setPicking(false);
-    onAddMonster(monster);
   };
+
+  const addAndClose = (mapped) => addAllAndClose([mapped]);
 
   // Folder-section "+ add here" stays blank-only — quick action for
   // organizing. Use the top-level picker to import.
@@ -311,8 +316,10 @@ function AddMonsterPicker({ onCancel, onBlank, on5etools, onJson }) {
                 Import from JSON
               </div>
               <div className="text-fade text-xs italic">
-                Paste a 5e.tools monster object directly, or load it from a <span className="font-cmd">.json</span> file.
-                Useful for homebrew not on any mirror, or when the URL importer can't reach the host.
+                Paste a <span className="font-cmd">5e.tools</span> monster object, or a{' '}
+                <span className="font-cmd">Bestiary Builder</span> export (one creature or a whole
+                bestiary at once) — or load either from a <span className="font-cmd">.json</span> file.
+                Best for homebrew, or when the URL importer can't reach the host.
               </div>
             </button>
           </div>
@@ -392,12 +399,14 @@ function AddMonsterPicker({ onCancel, onBlank, on5etools, onJson }) {
                 disabled={busy}
                 className="text-xs font-cmd uppercase tracking-wider text-fade hover:text-parchment border border-gold px-3 py-1.5 hover:bg-active transition disabled:opacity-50"
               >
-                {fileName ? `↺ ${fileName}` : '📁 Load .json file'}
+                {fileName ? `↺ ${fileName}` : '📁 Load .json / .txt file'}
               </button>
               <input
                 ref={fileRef}
                 type="file"
-                accept=".json,application/json"
+                // Bestiary Builder exports its bestiary as a .txt file (still JSON
+                // inside), so accept both rather than .json only.
+                accept=".json,.txt,application/json,text/plain"
                 className="hidden"
                 onChange={onFileChange}
               />

@@ -634,6 +634,307 @@ function mapFiveEtoolsMonster(raw) {
   };
 }
 
+// ─── Bestiary Builder import (bestiarybuilder.com) ─────────────────────────
+// Bestiary Builder is a homebrew stat-block editor. Its export shape is
+// completely different from 5e.tools: rather than pre-computed values it
+// stores RAW components (hit dice, ability scores, proficiency flags) and
+// derives AC/HP/saves/skills/passive at render time. We replicate its own
+// formulas here (mirrored from shared/src/statblock-helpers.ts in that
+// project — hpCalc/statCalc/ppCalc/crAsString/spellDc/spellAttackBonus) so
+// an imported monster matches what the user saw in the editor.
+//
+// The "Export" button emits an ARRAY of bare Statblock objects (one per
+// creature in the bestiary; a single-creature export is still a 1-element
+// array), each shaped { description, core, abilities, defenses, features,
+// spellcasting, misc }. We also accept a lone bare Statblock object.
+
+// floor(score/2) - 5 — BB's statCalc.
+function bbAbilityMod(score) {
+  const n = Number(score);
+  return Number.isFinite(n) ? Math.floor(n / 2) - 5 : 0;
+}
+
+function bbSigned(n) {
+  return n >= 0 ? `+${n}` : `${n}`;
+}
+
+// Fraction-aware CR — BB's crAsString.
+function bbCrString(cr) {
+  if (cr == null) return '';
+  const n = Number(cr);
+  if (n === 0.125) return '1/8';
+  if (n === 0.25)  return '1/4';
+  if (n === 0.5)   return '1/2';
+  return Number.isFinite(n) ? String(n) : String(cr);
+}
+
+function bbJoin(arr) {
+  if (Array.isArray(arr)) return arr.filter(Boolean).join(', ');
+  return typeof arr === 'string' ? arr : '';
+}
+
+// Join a BB speed/senses array (`[{ name, value, unit, comment }]`) into
+// "30 ft., fly 60 ft." — Walk is unlabeled; unit "none" omits the suffix.
+// The placeholder "New speed"/"New sense" rows BB seeds are skipped.
+function bbSpeedSenses(arr) {
+  if (!Array.isArray(arr)) return '';
+  const parts = [];
+  for (const item of arr) {
+    if (!item || item.name === 'New speed' || item.name === 'New sense') continue;
+    if (item.value == null && !item.comment) continue;
+    let s = '';
+    if (item.name && item.name !== 'Walk') s += `${String(item.name).toLowerCase()} `;
+    s += item.value;
+    if (item.unit && item.unit !== 'none') s += ` ${item.unit}.`;
+    if (item.comment) s += ` (${item.comment})`;
+    parts.push(s.trim());
+  }
+  return parts.join(', ');
+}
+
+// Strip BB / Avrae authoring markup from a feature description so it reads
+// cleanly in the stat block: drop <avrae hidden>…</avrae> automation blocks
+// (not player-facing) and normalize newlines. Markdown emphasis is left
+// intact — BB descriptions are authored in Markdown and stripping it risks
+// mangling meaningful text.
+function bbCleanText(text) {
+  if (typeof text !== 'string') return '';
+  return text
+    .replace(/<avrae\s+hidden>[\s\S]*?<\/avrae>/gi, '')
+    .replace(/\r\n/g, '\n')
+    .trim();
+}
+
+// BB feature/action entries are `{ name, description, automation }`. Reuse
+// the shared recharge parser so "(Recharge 5-6)" in the name becomes a
+// numeric `recharge` field and a clean label/id for Avrae's `!i a` lookup.
+// `namePrefix` tags folded-in categories (lair/mythic/regional) so nothing
+// is silently dropped when mapping onto our five action kinds.
+function bbFeatures(arr, namePrefix) {
+  if (!Array.isArray(arr)) return [];
+  return arr.map(f => {
+    const raw = `${namePrefix || ''}${f && f.name ? f.name : ''}`;
+    const { recharge, name } = parseRecharge(raw);
+    const entry = {
+      id: slugifyActionName(name),
+      name,
+      description: bbCleanText(f && f.description),
+    };
+    if (recharge != null) entry.recharge = recharge;
+    return entry;
+  });
+}
+
+// skillName → our camelCase id + governing ability. BB stores display names
+// ("Sleight of Hand"); we normalize (lowercase, strip non-alphanumerics) so
+// "Sleight of Hand", "sleightOfHand", and "sleight of hand" all resolve.
+function bbSkillKey(name) {
+  return String(name || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+}
+const BB_SKILL_LOOKUP = (() => {
+  const defs = [
+    ['acrobatics', 'dex'], ['animalHandling', 'wis'], ['arcana', 'int'],
+    ['athletics', 'str'], ['deception', 'cha'], ['history', 'int'],
+    ['insight', 'wis'], ['intimidation', 'cha'], ['investigation', 'int'],
+    ['medicine', 'wis'], ['nature', 'int'], ['perception', 'wis'],
+    ['performance', 'cha'], ['persuasion', 'cha'], ['religion', 'int'],
+    ['sleightOfHand', 'dex'], ['stealth', 'dex'], ['survival', 'wis'],
+  ];
+  const out = {};
+  for (const [id, stat] of defs) out[bbSkillKey(id)] = { id, stat };
+  return out;
+})();
+
+// Passive Perception — BB's ppCalc: override, else 10 + Wis mod adjusted by
+// Perception proficiency, else the flat 10 + Wis mod.
+function bbPassivePerception(sb, prof, mod) {
+  const misc = sb.misc || {};
+  if (misc.passivePerceptionOverride != null) return misc.passivePerceptionOverride;
+  const wis = mod('wis');
+  const skills = (sb.abilities && sb.abilities.skills) || [];
+  const perc = skills.find(s => bbSkillKey(s && s.skillName) === 'perception');
+  if (perc) {
+    if (perc.override != null)   return 10 + perc.override;
+    if (perc.isExpertise)        return 10 + wis + prof * 2;
+    if (perc.isProficient)       return 10 + wis + prof;
+    if (perc.isHalfProficient)   return 10 + wis + Math.floor(prof / 2);
+  }
+  return 10 + wis;
+}
+
+// Both spellcasting kinds → our flat `[{ name, header, spells:[{name,level,freq}] }]`.
+// Innate: spellList keyed by uses/day ("0" = at will). Caster: spellList is
+// level-indexed (0-9), slot counts from spellSlotList. DC/attack use BB's
+// spellDc / spellAttackBonus formulas.
+function bbSpellcasting(sb, prof, mod) {
+  const out = [];
+  const sc = sb.spellcasting || {};
+
+  const innate = sc.innateSpells;
+  if (innate && innate.spellCastingAbility) {
+    const spells = [];
+    const list = innate.spellList || {};
+    for (const key of Object.keys(list)) {
+      const group = list[key] || [];
+      if (!group.length) continue;
+      const freq = Number(key) === 0 ? 'at will' : `${key}/day`;
+      for (const sp of group) {
+        const name = typeof sp === 'string' ? sp : (sp && sp.spell) || '';
+        if (name) spells.push({ name, level: null, freq });
+      }
+    }
+    if (spells.length) {
+      const dc  = innate.spellDcOverride    != null ? innate.spellDcOverride    : 8 + mod(innate.spellCastingAbility) + prof;
+      const atk = innate.spellBonusOverride != null ? innate.spellBonusOverride : mod(innate.spellCastingAbility) + prof;
+      out.push({
+        name: 'Innate Spellcasting',
+        header: `Spell save DC ${dc}, ${bbSigned(atk)} to hit with spell attacks.`,
+        spells,
+      });
+    }
+  }
+
+  const caster = sc.casterSpells;
+  if (caster && caster.castingClass && Array.isArray(caster.spellList)) {
+    const spells = [];
+    const slots = caster.spellSlotList || {};
+    caster.spellList.forEach((lvlSpells, level) => {
+      if (!Array.isArray(lvlSpells) || !lvlSpells.length) return;
+      const freq = level === 0 ? 'cantrip' : (slots[level] != null ? `${slots[level]} slots` : '');
+      for (const name of lvlSpells) {
+        if (name) spells.push({ name, level, freq });
+      }
+    });
+    if (spells.length) {
+      const abi = caster.spellCastingAbilityOverride || caster.spellCastingAbility;
+      const dc  = caster.spellDcOverride    != null ? caster.spellDcOverride    : 8 + mod(abi) + prof;
+      const atk = caster.spellBonusOverride != null ? caster.spellBonusOverride : mod(abi) + prof;
+      const lvl = caster.casterLevel ? `${caster.casterLevel}th-level ` : '';
+      out.push({
+        name: 'Spellcasting',
+        header: `${lvl}${caster.castingClass} spellcaster. Spell save DC ${dc}, ${bbSigned(atk)} to hit with spell attacks.`,
+        spells,
+      });
+    }
+  }
+
+  return out;
+}
+
+function looksLikeBestiaryBuilder(o) {
+  return !!o && typeof o === 'object'
+    && o.description && typeof o.description === 'object'
+    && o.core        && typeof o.core === 'object'
+    && o.abilities   && typeof o.abilities === 'object'
+    && o.defenses    && typeof o.defenses === 'object'
+    && o.features    && typeof o.features === 'object';
+}
+
+function mapBestiaryBuilderMonster(sb) {
+  const desc  = sb.description || {};
+  const core  = sb.core || {};
+  const ab    = sb.abilities || {};
+  const stats = ab.stats || {};
+  const def   = sb.defenses || {};
+  const feat  = sb.features || {};
+  const misc  = sb.misc || {};
+  const prof  = Number(core.proficiencyBonus) || 2;
+
+  const abilities = {
+    str: Number(stats.str) || 10, dex: Number(stats.dex) || 10, con: Number(stats.con) || 10,
+    int: Number(stats.int) || 10, wis: Number(stats.wis) || 10, cha: Number(stats.cha) || 10,
+  };
+  const mod = (k) => bbAbilityMod(abilities[k]);
+
+  // Saves — only ones the creature is proficient in or overrides are listed,
+  // matching how 5e stat blocks (and our `saves` object) work.
+  const saves = {};
+  const saveObj = ab.saves || {};
+  for (const k of ['str', 'dex', 'con', 'int', 'wis', 'cha']) {
+    const s = saveObj[k];
+    if (!s) continue;
+    if (s.override != null) saves[k] = bbSigned(s.override);
+    else if (s.isProficient) saves[k] = bbSigned(mod(k) + prof);
+  }
+
+  // Skills — array of proficiency descriptors; compute the mod BB would show.
+  const skills = {};
+  for (const sk of (ab.skills || [])) {
+    const found = BB_SKILL_LOOKUP[bbSkillKey(sk && sk.skillName)];
+    if (!found) continue;
+    let val;
+    if (sk.override != null) {
+      val = sk.override;
+    } else {
+      const base = mod(found.stat);
+      if (sk.isExpertise)           val = base + prof * 2;
+      else if (sk.isProficient)     val = base + prof;
+      else if (sk.isHalfProficient) val = base + Math.floor(prof / 2);
+      else continue; // untrained + no override → not listed
+    }
+    skills[found.id] = bbSigned(val);
+  }
+
+  // HP — hpCalc, plus a reconstructed "NdM ± con" formula for display.
+  const hpRaw   = def.hp || {};
+  const numDie  = Number(hpRaw.numOfHitDie) || 0;
+  const sizeDie = Number(hpRaw.sizeOfHitDie) || 0;
+  const conMod  = mod('con');
+  const hpAvg   = hpRaw.override != null
+    ? hpRaw.override
+    : (numDie > 0 ? Math.floor(numDie * ((sizeDie + 1) / 2 + conMod)) : null);
+  const conTotal = numDie * conMod;
+  const formula = (numDie > 0 && sizeDie > 0)
+    ? `${numDie}d${sizeDie}${conTotal ? (conTotal > 0 ? ` + ${conTotal}` : ` - ${Math.abs(conTotal)}`) : ''}`
+    : '';
+
+  // Languages carry telepathy (stored separately in BB's misc).
+  const langParts = Array.isArray(core.languages) ? core.languages.filter(Boolean) : [];
+  if (Number(misc.telepathy) > 0) langParts.push(`telepathy ${misc.telepathy} ft.`);
+
+  // Non-standard feature buckets fold into the two we surface so nothing is
+  // dropped: lair/regional → traits (environmental, non-attack), mythic →
+  // legendary (action-economy). DM Roll's clickable columns only render the
+  // five standard kinds, so folded entries still show but stay tagged.
+  const traits = [
+    ...bbFeatures(feat.features),
+    ...bbFeatures(feat.lair,     'Lair Action: '),
+    ...bbFeatures(feat.regional, 'Regional Effect: '),
+  ];
+  const legendaryActions = [
+    ...bbFeatures(feat.legendary),
+    ...bbFeatures(feat.mythic, 'Mythic: '),
+  ];
+
+  return {
+    name:      desc.name || '',
+    source:    'Bestiary Builder',
+    size:      core.size || '',
+    type:      core.race || '',
+    alignment: desc.alignment || '',
+    cr:        bbCrString(desc.cr),
+    ac:        (def.ac && typeof def.ac.ac === 'number') ? def.ac.ac : null,
+    hp:        { average: hpAvg, formula },
+    speed:     bbSpeedSenses(core.speed),
+    abilities,
+    saves,
+    skills,
+    senses:    bbSpeedSenses(core.senses),
+    passive:   bbPassivePerception(sb, prof, mod),
+    languages: langParts.join(', '),
+    resist:          bbJoin(def.resistances),
+    immune:          bbJoin(def.immunities),
+    vulnerable:      bbJoin(def.vulnerabilities),
+    conditionImmune: bbJoin(def.conditionImmunities),
+    traits,
+    actions:          bbFeatures(feat.actions),
+    bonusActions:     bbFeatures(feat.bonus),
+    reactions:        bbFeatures(feat.reactions),
+    legendaryActions,
+    spellcasting:     bbSpellcasting(sb, prof, mod),
+  };
+}
+
 ipcMain.handle('import-monster-from-5etools', async (_event, url) => {
   try {
     const { name, source } = parseFiveEtoolsUrl(url);
@@ -648,11 +949,14 @@ ipcMain.handle('import-monster-from-5etools', async (_event, url) => {
   }
 });
 
-// JSON import — accepts either a bare 5e.tools monster object
-// `{ name, source, ... }` or a bestiary wrapper `{ monster: [...] }`.
-// In the wrapper case we take the first (or only) entry rather than
-// guessing intent — multi-monster pastes get a clear error. Same
-// mapping pipeline as the URL importer, just without the fetch.
+// JSON import — auto-detects two source formats and returns a LIST of mapped
+// monsters (`{ ok, monsters: [...] }`):
+//   • Bestiary Builder (bestiarybuilder.com) — an array of bare Statblock
+//     objects, or a lone one. All creatures in the array are imported (it's
+//     the user's own curated homebrew set), via mapBestiaryBuilderMonster.
+//   • 5e.tools — a bare monster `{ name, source, ... }` or a bestiary wrapper
+//     `{ monster: [...] }`; single-monster only (a full bestiary file gets a
+//     clear "paste a single monster" error), via mapFiveEtoolsMonster.
 ipcMain.handle('import-monster-from-json', async (_event, jsonText) => {
   try {
     if (typeof jsonText !== 'string' || jsonText.trim() === '') {
@@ -664,6 +968,28 @@ ipcMain.handle('import-monster-from-json', async (_event, jsonText) => {
     if (!parsed || typeof parsed !== 'object') {
       throw new Error('JSON did not parse to an object');
     }
+
+    // Bestiary Builder — distinguished by the nested { description, core,
+    // abilities, defenses, features } shape (5e.tools is flat), whether wrapped
+    // in the export array or pasted as a single object.
+    const bbList = Array.isArray(parsed)
+      ? parsed.filter(looksLikeBestiaryBuilder)
+      : (looksLikeBestiaryBuilder(parsed) ? [parsed] : null);
+    if (bbList) {
+      if (bbList.length === 0) {
+        throw new Error(
+          'no Bestiary Builder creatures found — expected the array its Export button copies, ' +
+          'each entry shaped { description, core, abilities, ... }'
+        );
+      }
+      const monsters = bbList.map(mapBestiaryBuilderMonster).filter(m => m.name);
+      if (monsters.length === 0) {
+        throw new Error('Bestiary Builder creatures had no usable data (missing names)');
+      }
+      return { ok: true, monsters };
+    }
+
+    // 5e.tools single-monster JSON.
     let raw;
     if (Array.isArray(parsed.monster)) {
       if (parsed.monster.length === 0) {
@@ -680,11 +1006,11 @@ ipcMain.handle('import-monster-from-json', async (_event, jsonText) => {
       raw = parsed;
     } else {
       throw new Error(
-        `JSON doesn't look like a monster — expected an object with "name" and "source" fields, ` +
-        `or a bestiary wrapper { "monster": [{...}] }`
+        `JSON doesn't look like a monster — expected a 5e.tools object with "name" and "source" fields, ` +
+        `a bestiary wrapper { "monster": [{...}] }, or a Bestiary Builder export`
       );
     }
-    return { ok: true, monster: mapFiveEtoolsMonster(raw) };
+    return { ok: true, monsters: [mapFiveEtoolsMonster(raw)] };
   } catch (e) {
     return { ok: false, error: e.message };
   }
